@@ -18,30 +18,30 @@
 
 
 # Directories (private version)
-#HOMEDIR = ../home
-#INCDIR = ../home/p2c
-#BINDIR = ..
-#LIBDIR = ../home
-#MANDIR = ../home
-#MANFILE = p2c.cat          # human-readable manual (for cat.1)
+HOMEDIR = ../home
+INCDIR = ../home/p2c
+BINDIR = ..
+LIBDIR = ../home
+MANDIR = ../home
+MANFILE = p2c.cat          # human-readable manual (for cat.1)
 #MANFILE = p2c.man.inst    # uncompressed nroff source (for man.1)
 #MANFILE = p2c.man.Z       # compressed nroff source (for man.1.Z)
 
 # Directories (public version)
-HOMEDIR = /usr/lib/p2c
-INCDIR = /usr/include/p2c
-BINDIR = /usr/bin
-LIBDIR = /usr/lib
-MANDIR = /usr/man/man1
-MANFILE = p2c.man.inst
+#HOMEDIR = /usr/lib/p2c
+#INCDIR = /usr/include/p2c
+#BINDIR = /usr/bin
+#LIBDIR = /usr/lib
+#MANDIR = /usr/man/man1
+#MANFILE = p2c.man.inst
 
 # Compiler options
-CC = gcc                    # you may wish to use gcc here instead
-OPT = -O2		   # uncomment this for optimization
+CC = cc                    # you may wish to use gcc here instead
+OPT = # -O		   # uncomment this for optimization
 DEB = # -g		   # uncomment this for debugging
 DEFS =			   # place other -D types of things here
 CFLAGS = $(OPT) $(DEB) $(DEFS)
-LFLAGS = -s
+LFLAGS =
 
 
 # Custom translator modules
