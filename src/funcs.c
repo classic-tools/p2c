@@ -1453,6 +1453,18 @@ Static Stmt *proc_cycle()
 
 
 
+Static Stmt *proc_date()
+{
+    Expr *ex;
+
+    if (!skipopenparen())
+	return NULL;
+    ex = p_expr(tp_str255);
+    skipcloseparen();
+    return makestmt_call(makeexpr_bicall_1("VAXdate", tp_integer, ex));
+}
+
+
 Static Stmt *proc_dec()
 {
     Expr *vex, *ex;
@@ -2723,6 +2735,60 @@ Static Expr *func_ord4()
 
 
 
+Static Stmt *proc_pack()
+{
+    Expr *exs, *exd, *exi, *mind;
+    Meaning *tvar;
+    Stmt *sp;
+
+    if (!skipopenparen())
+	return NULL;
+    exs = p_expr(NULL);
+    if (!skipcomma())
+	return NULL;
+    exi = p_ord_expr();
+    if (!skipcomma())
+	return NULL;
+    exd = p_expr(NULL);
+    skipcloseparen();
+    if (exs->val.type->kind != TK_ARRAY ||
+	(exd->val.type->kind != TK_ARRAY &&
+	 exd->val.type->kind != TK_SMALLARRAY)) {
+	warning("Bad argument types for PACK/UNPACK [325]");
+	return makestmt_call(makeexpr_bicall_3("pack", tp_void,
+					       exs, exi, exd));
+    }
+    if (exs->val.type->smax || exd->val.type->smax) {
+	tvar = makestmttempvar(exd->val.type->indextype, name_TEMP);
+	sp = makestmt(SK_FOR);
+	if (exd->val.type->smin)
+	    mind = exd->val.type->smin;
+	else
+	    mind = exd->val.type->indextype->smin;
+	sp->exp1 = makeexpr_assign(makeexpr_var(tvar),
+				   copyexpr(mind));
+	sp->exp2 = makeexpr_rel(EK_LE, makeexpr_var(tvar),
+				copyexpr(exd->val.type->indextype->smax));
+	sp->exp3 = makeexpr_assign(makeexpr_var(tvar),
+				   makeexpr_plus(makeexpr_var(tvar),
+						 makeexpr_long(1)));
+	exi = makeexpr_minus(exi, copyexpr(mind));
+	sp->stm1 = makestmt_assign(p_index(exd, makeexpr_var(tvar)),
+				   p_index(exs,
+					   makeexpr_plus(makeexpr_var(tvar),
+							 exi)));
+	return sp;
+    } else {
+	exi = gentle_cast(exi, exs->val.type->indextype);
+	return makestmt_call(makeexpr_bicall_3("memcpy", exd->val.type,
+					       exd,
+					       makeexpr_addr(p_index(exs, exi)),
+					       makeexpr_sizeof(copyexpr(exd), 0)));
+    }
+}
+
+
+
 Static Expr *func_pad(ex)
 Expr *ex;
 {
@@ -3117,6 +3183,8 @@ int isreadln;
     spafter = NULL;
     sp = NULL;
     tempcp = NULL;
+    if (fex->val.type->kind == TK_ARRAY)
+	fex = makeexpr_sprintfify(fex);
     isstrread = (fex->val.type->kind == TK_STRING);
     if (isstrread) {
         exj = var;
@@ -3226,7 +3294,7 @@ int isreadln;
 			    warning("Unrecognized format specified in READ [212]");
 			gettok();
 		    }
-                    type = findbasetype(var->val.type, 0);
+                    type = findbasetype(var->val.type, ODECL_NOPRES);
                     if (exprlongness(var) > 0)
                         ex = makeexpr_string(format_s("%%l%s", fmt));
                     else if (type == tp_integer || type == tp_int ||
@@ -3280,7 +3348,10 @@ int isreadln;
                     break;
 
                 case TK_REAL:
-                    ex = makeexpr_string("%lg");
+		    if (var->val.type == tp_longreal)
+			ex = makeexpr_string("%lg");
+		    else
+			ex = makeexpr_string("%g");
                     break;
 
                 case TK_STRING:     /* strread only */
@@ -3594,6 +3665,60 @@ Expr *ex;
         return makeexpr_actcast(makeexpr_bicall_1("floor", tp_longreal,
 						  makeexpr_plus(ex, makeexpr_real("0.5"))),
                                 tp_integer);
+    }
+}
+
+
+
+Static Stmt *proc_unpack()
+{
+    Expr *exs, *exd, *exi, *mins;
+    Meaning *tvar;
+    Stmt *sp;
+
+    if (!skipopenparen())
+	return NULL;
+    exs = p_expr(NULL);
+    if (!skipcomma())
+	return NULL;
+    exd = p_expr(NULL);
+    if (!skipcomma())
+	return NULL;
+    exi = p_ord_expr();
+    skipcloseparen();
+    if (exd->val.type->kind != TK_ARRAY ||
+	(exs->val.type->kind != TK_ARRAY &&
+	 exs->val.type->kind != TK_SMALLARRAY)) {
+	warning("Bad argument types for PACK/UNPACK [325]");
+	return makestmt_call(makeexpr_bicall_3("unpack", tp_void,
+					       exs, exd, exi));
+    }
+    if (exs->val.type->smax || exd->val.type->smax) {
+	tvar = makestmttempvar(exs->val.type->indextype, name_TEMP);
+	sp = makestmt(SK_FOR);
+	if (exs->val.type->smin)
+	    mins = exs->val.type->smin;
+	else
+	    mins = exs->val.type->indextype->smin;
+	sp->exp1 = makeexpr_assign(makeexpr_var(tvar),
+				   copyexpr(mins));
+	sp->exp2 = makeexpr_rel(EK_LE, makeexpr_var(tvar),
+				copyexpr(exs->val.type->indextype->smax));
+	sp->exp3 = makeexpr_assign(makeexpr_var(tvar),
+				   makeexpr_plus(makeexpr_var(tvar),
+						 makeexpr_long(1)));
+	exi = makeexpr_minus(exi, copyexpr(mins));
+	sp->stm1 = makestmt_assign(p_index(exd,
+					   makeexpr_plus(makeexpr_var(tvar),
+							 exi)),
+				   p_index(exs, makeexpr_var(tvar)));
+	return sp;
+    } else {
+	exi = gentle_cast(exi, exs->val.type->indextype);
+	return makestmt_call(makeexpr_bicall_3("memcpy", exd->val.type,
+					       exd,
+					       makeexpr_addr(p_index(exs, exi)),
+					       makeexpr_sizeof(copyexpr(exd), 0)));
     }
 }
 
@@ -4354,7 +4479,7 @@ int base;
 		    integerwidth = (which_lang == LANG_TURBO) ? 1 : 12;
 		wid = makeexpr_long(integerwidth);
 	    }
-	    type = findbasetype(ex->val.type, 0);
+	    type = findbasetype(ex->val.type, ODECL_NOPRES);
 	    if (base == 16)
 		fmtcode = "x";
 	    else if (base == 8)
@@ -4982,6 +5107,18 @@ Static Stmt *proc_str_turbo()
 
 
 
+Static Stmt *proc_time()
+{
+    Expr *ex;
+
+    if (!skipopenparen())
+	return NULL;
+    ex = p_expr(tp_str255);
+    skipcloseparen();
+    return makestmt_call(makeexpr_bicall_1("VAXtime", tp_integer, ex));
+}
+
+
 Static Expr *func_xor()
 {
     Expr *ex, *ex2;
@@ -5172,6 +5309,7 @@ mp_blockwrite_turbo =
     makespecialproc( "CLOSE",         proc_close);
     makespecialproc( "CONNECT",       proc_assign);
     makespecialproc( "CYCLE",	      proc_cycle);
+    makespecialproc( "DATE",	      proc_date);
 mp_dec_turbo =
     makespecialproc( "DEC_TURBO",     proc_dec);
     makespecialproc( "DISPOSE",       proc_dispose);
@@ -5194,7 +5332,7 @@ mp_dec_turbo =
     if (which_lang != LANG_VAX)
 	makespecialproc( "OPEN",      proc_open);
     makespecialproc( "OVERPRINT",     proc_overprint);
-    makespecialproc( "PACK",          NULL);
+    makespecialproc( "PACK",          proc_pack);
     makespecialproc( "PAGE",          proc_page);
     makespecialproc( "PUT",           proc_put);
     makespecialproc( "PROMPT",        proc_prompt);
@@ -5216,7 +5354,8 @@ mp_str_turbo =
     makespecialproc( "STRMOVE",       proc_strmove);
     makespecialproc( "STRREAD",       proc_strread);
     makespecialproc( "STRWRITE",      proc_strwrite);
-    makespecialproc( "UNPACK",        NULL);
+    makespecialproc( "TIME",	      proc_time);
+    makespecialproc( "UNPACK",        proc_unpack);
     makespecialproc( "WRITE",         proc_write);
     makespecialproc( "WRITEDIR",      proc_writedir);
     makespecialproc( "WRITELN",       proc_writeln);

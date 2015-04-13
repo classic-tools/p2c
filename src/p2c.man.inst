@@ -108,7 +108,7 @@ never translates more than one module per run.
 Before starting,
 .I p2c
 reads the file
-.I --HOMEDIR--/p2crc
+.I /cdrom/source/d/p2c/p2c/home/p2crc
 for a number of configuration parameters.  (The actual path used on your
 system may vary.  The
 .B \-i
@@ -186,7 +186,7 @@ causes no local configuration file to be used.
 .TP
 .B \-v
 ("Vanilla.")  Do not read from the system configuration file
-.I --HOMEDIR--/p2crc.
+.I /cdrom/source/d/p2c/p2c/home/p2crc.
 Since some of the parameters in this file are required, your local
 configuration file must include those parameters instead.  This
 also suppresses the file named by the P2CRC environment variable.
@@ -195,7 +195,7 @@ also suppresses the file named by the P2CRC environment variable.
 Use
 .I homedir
 instead of
-.I --HOMEDIR--
+.I /cdrom/source/d/p2c/p2c/home
 as the
 .I p2c
 home directory.  The system
@@ -221,7 +221,7 @@ in the parent of the current directory.
 This special option (which must be the only argument on the
 command line if used) simply copies the system configuration
 file
-.I --HOMEDIR--/p2crc
+.I /cdrom/source/d/p2c/p2c/home/p2crc
 to the standard output in its entirety.  (It may be used with
 .BR \-H ,
 but
@@ -1089,8 +1089,8 @@ which expands to the name of the module.  The default path looks for
 and
 .I %s.text
 in the current directory, then for
-.I --HOMEDIR--/%s.imp.
-(where --HOMEDIR-- is the
+.I /cdrom/source/d/p2c/p2c/home/%s.imp.
+(where /cdrom/source/d/p2c/p2c/home is the
 .I p2c
 home directory.)
 .TP
@@ -1504,7 +1504,7 @@ but will not automatically truncate.  The cure is to use
 .I copy
 in the Pascal source to truncate the strings explicitly.
 .SH FILES
-.ta \w'--INCDIR--/p2c.h 'u
+.ta \w'/cdrom/source/d/p2c/p2c/home/p2c/p2c.h 'u
 file.\fIxxx\fR	Pascal source files
 .br
 file.c	resulting C source file
@@ -1515,17 +1515,17 @@ p2crc	local configuration file
 .br
 \&.p2crc	alternate local configuration file
 .br
---HOMEDIR--/p2crc	system-wide configuration file
+/cdrom/source/d/p2c/p2c/home/p2crc	system-wide configuration file
 .br
---HOMEDIR--/system.imp	declarations for predefined functions
+/cdrom/source/d/p2c/p2c/home/system.imp	declarations for predefined functions
 .br
---HOMEDIR--/system.m2	analogous declarations for Modula-2
+/cdrom/source/d/p2c/p2c/home/system.m2	analogous declarations for Modula-2
 .br
---HOMEDIR--/*.imp	interface text for standard modules
+/cdrom/source/d/p2c/p2c/home/*.imp	interface text for standard modules
 .br
---INCDIR--/p2c.h	header file for translated programs
+/cdrom/source/d/p2c/p2c/home/p2c/p2c.h	header file for translated programs
 .br
---LIBDIR--/libp2c.a	run-time library
+/cdrom/source/d/p2c/p2c/home/libp2c.a	run-time library
 .SH AUTHOR
 Dave Gillespie, daveg@csvax.cs.caltech.edu.
 .PP

@@ -1,4 +1,4 @@
-/* "p2c", a Pascal to C translator, version 1.19.
+/* "p2c", a Pascal to C translator, version 1.20.
    Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author: Dave Gillespie.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
@@ -135,7 +135,7 @@ char *p2c_home = P2C_HOME;
 extern char *p2c_home;
 #endif
 
-#define P2C_VERSION  "1.19"
+#define P2C_VERSION  "1.20"
 
 
 
@@ -934,6 +934,7 @@ typedef struct S_stmt {
 #define ODECL_HEADER        0x8
 #define ODECL_FORWARD       0x10
 #define ODECL_DECL	    0x20
+#define ODECL_NOPRES	    0x40
 
 
 /* Flags for fixexpr(): */
@@ -1092,7 +1093,7 @@ extern short breakbeforearith, breakbeforerel, breakbeforelog;
 extern short breakbeforedot, breakbeforeassign;
 extern short for_allornone;
 extern short extraparens, breakparens, returnparens;
-extern short variablearrays, stararrays;
+extern short variablearrays, initpacstrings, stararrays;
 extern short spaceexprs, spacefuncs, spacecommas, implicitzero, starindex;
 extern int casetabs;
 extern short starfunctions, mixfields, alloczeronil, postincrement;
@@ -1201,6 +1202,7 @@ struct rcstruct {
     'S', 'V', "CASTNULL",        (anyptr) &castnull,         -1,
     'S', 'V', "COPYSTRUCTS",     (anyptr) &copystructs,      -1,
     'S', 'V', "VARIABLEARRAYS",  (anyptr) &variablearrays,   -1,
+    'S', 'V', "INITPACSTRINGS",  (anyptr) &initpacstrings,   -1,
     'S', 'V', "REUSEFIELDNAMES", (anyptr) &reusefieldnames,   1,
     'S', 'V', "USEVEXTERN",      (anyptr) &usevextern,        1,
     'S', 'V', "CSIGNIF",         (anyptr) &csignif,          -1,

@@ -183,7 +183,7 @@ int islong;
             return mp->name;
 
         default:
-            intwarning("value_name", format_s("bad type for constant: %s [153]", 
+            intwarning("value_name", format_s("bad type for constant: %s [153]",
                                               typekindname(type->kind)));
             return "<spam>";
     }
@@ -279,7 +279,7 @@ Type *tp;
             return (tp != tp_int && tp != tp_uint && tp != tp_sint);
 
         case TK_SUBR:
-            return (findbasetype(tp, 0) == tp_integer);
+            return (findbasetype(tp, ODECL_NOPRES) == tp_integer);
 
         default:
             return 0;
@@ -295,7 +295,7 @@ long i;
     Value val;
 
     if (type->kind == TK_ENUM)
-        type = findbasetype(type, 0);
+        type = findbasetype(type, ODECL_NOPRES);
     if (type->kind == TK_SUBR)
         type = type->basetype;
     val.type = type;
@@ -473,7 +473,7 @@ Value val;
 {
     Expr *ex;
 
-    if (val.type->kind == TK_INTEGER && 
+    if (val.type->kind == TK_INTEGER &&
         (val.i < -32767 || val.i > 32767) &&
         sizeof_int < 32)
         ex = makeexpr(EK_LONGCONST, 0);
@@ -1113,8 +1113,9 @@ long val;
         ex = ex->args[0];
     if (ex->kind == EK_CONST || ex->kind == EK_LONGCONST)
         exval = ex->val;
-    else if (ex->kind == EK_VAR && 
+    else if (ex->kind == EK_VAR &&
              (mp = (Meaning *)ex->val.i)->kind == MK_CONST &&
+	     mp->val.type &&
              foldconsts != 0)
         exval = mp->val;
     else
@@ -1295,7 +1296,8 @@ Type *type;
         case EK_VAR:
             mp = (Meaning *) a->val.i;
             if (mp->kind == MK_CONST) {
-                if (mp->val.type->kind == TK_STRING && type->kind == TK_CHAR) {
+                if (mp->val.type && mp->val.type->kind == TK_STRING &&
+		    type->kind == TK_CHAR) {
                     val = value_cast(mp->val, type);
                     a->kind = EK_CONST;
                     a->val = val;
@@ -1431,7 +1433,7 @@ Type *type;
 	}
     }
     btype = (type->kind == TK_SUBR) ? type->basetype : type;
-    if ((a->kind == EK_CAST || a->kind == EK_ACTCAST) && 
+    if ((a->kind == EK_CAST || a->kind == EK_ACTCAST) &&
         btype->kind == TK_INTEGER &&
         ord_type(a->val.type)->kind == TK_INTEGER)
         return makeexpr_longcast(a, long_type(type));
@@ -1460,6 +1462,7 @@ Expr *ex;
     }
     if (ex->kind == EK_VAR &&
 	(mp = (Meaning *)ex->val.i)->kind == MK_CONST &&
+	mp->val.type &&
 	mp->val.type->kind == TK_STRING &&
 	mp->val.i == 1) {
       ex->kind = EK_CONST;
@@ -1979,11 +1982,11 @@ Expr *a;
             break;
 
         case EK_CAST:
-            if (a->val.type != tp_unsigned && 
+            if (a->val.type != tp_unsigned &&
                  a->val.type != tp_uint &&
                  a->val.type != tp_ushort &&
                  a->val.type != tp_ubyte &&
-                 a->args[0]->val.type != tp_unsigned && 
+                 a->args[0]->val.type != tp_unsigned &&
                  a->args[0]->val.type != tp_uint &&
                  a->args[0]->val.type != tp_ushort &&
                  a->args[0]->val.type != tp_ubyte &&
@@ -2031,7 +2034,7 @@ Expr *ex;
 	    type = tp->basetype;
     }
     if (type->kind == TK_SUBR)
-	type = findbasetype(type, 0);
+	type = findbasetype(type, ODECL_NOPRES);
     return type;
 }
 
@@ -2126,7 +2129,9 @@ Expr *a, *b;
                 if ((ord_type(a->args[i]->val.type) == ord_type(a->args[j]->val.type) ||
 		     ord_type(a->args[i]->val.type)->kind == TK_INTEGER ||
 		     ord_type(a->args[j]->val.type)->kind == TK_INTEGER) &&
-		    (!ischartype(a->args[i]) || !ischartype(a->args[j])) &&
+		    (!(ischartype(a->args[i]) || ischartype(a->args[j])) ||
+		     a->args[i]->val.i == - a->args[j]->val.i ||
+		     a->args[i]->val.i == 0 || a->args[j]->val.i == 0) &&
                     (a->args[i]->val.type->kind != TK_REAL &&
                      a->args[i]->val.type->kind != TK_STRING &&
                      a->args[j]->val.type->kind != TK_REAL &&
@@ -2656,7 +2661,7 @@ Expr *a, *b;
     }
     if (((b->kind == EK_CONST && (i = b->val.i)) ||
          (b->kind == EK_VAR && (mp = (Meaning *)b->val.i)->kind == MK_CONST &&
-                               (i = mp->val.i) && foldconsts != 0)) && i > 0) {
+	  mp->val.type && (i = mp->val.i) && foldconsts != 0)) && i > 0) {
         if (i == 1)
             return a;
         if (div_po2 > 0) {
@@ -2721,7 +2726,7 @@ Expr *a, *b;
     }
     if (((b->kind == EK_CONST && (i = b->val.i)) ||
          (b->kind == EK_VAR && (mp = (Meaning *)b->val.i)->kind == MK_CONST &&
-                               (i = mp->val.i) && foldconsts != 0)) && i > 0) {
+	  mp->val.type && (i = mp->val.i) && foldconsts != 0)) && i > 0) {
         if (i == 1)
             return makeexpr_long(0);
         if (mod_po2 != 0) {
@@ -3149,7 +3154,7 @@ Expr *a, *b;
 		a->val.type->kind == TK_ARRAY &&
 		a->val.type->basetype->kind == TK_CHAR) ? "strncmp" : "memcmp";
         a = makeexpr_bicall_3(name, tp_int,
-			      makeexpr_addr(a), 
+			      makeexpr_addr(a),
 			      makeexpr_addr(b), ex);
         b = makeexpr_long(0);
     } else if (a->val.type->kind == TK_SET ||
@@ -3330,20 +3335,23 @@ Expr *ex;
 
         case EK_VAR:
             mp = (Meaning *)ex->val.i;
-            return ((mp->kind == MK_VAR || mp->kind == MK_PARAM) ||
+            return (mp->kind == MK_VAR || mp->kind == MK_PARAM ||
+		    mp->kind == MK_VARPARAM ||
                     (mp->kind == MK_CONST &&
                      (mp->type->kind == TK_ARRAY ||
                       mp->type->kind == TK_RECORD ||
                       mp->type->kind == TK_SET)));
 
         case EK_HAT:
+        case EK_NAME:
             return 1;
 
         case EK_INDEX:
-            return expr_is_lvalue(ex->args[0]);
-
 	case EK_DOT:
 	    return expr_is_lvalue(ex->args[0]);
+
+	case EK_COMMA:
+	    return expr_is_lvalue(ex->args[ex->nargs-1]);
 
         default:
             return 0;
@@ -3424,7 +3432,7 @@ Expr *ex;
 	if (ex->kind == EK_VAR) {
 	    mp = (Meaning *)ex->val.i;
 	    if (mp->kind == MK_PARAM || mp->kind == MK_VARPARAM)
-		note(format_s("File parameter %s needs its associated buffers [318]",
+		note(format_s("File parameter %s can't access buffers (try StructFiles = 1) [318]",
 			      mp->name));
 	}
     } else if (!mp->bufferedfile &&
@@ -3463,7 +3471,7 @@ int check;
 				     filebasename(a),
 				     makeexpr_type(filebasetype(a->val.type)));
     }
-    if (a->kind == EK_PLUS && 
+    if (a->kind == EK_PLUS &&
                (ex = a->args[0])->val.type->kind == TK_POINTER &&
                (ex->val.type->basetype->kind == TK_ARRAY ||
                 ex->val.type->basetype->kind == TK_STRING ||
@@ -3474,7 +3482,7 @@ int check;
             a = grabarg(a, 0);
         return makeexpr_bin(EK_INDEX, ex->val.type->basetype, ex, a);
     }
-    if (a->val.type->kind == TK_STRING || 
+    if (a->val.type->kind == TK_STRING ||
         a->val.type->kind == TK_ARRAY ||
         a->val.type->kind == TK_SET) {
         if (starindex == 0)
@@ -3503,7 +3511,7 @@ int check;
 	    a->val.type = a->val.type->basetype;
 	    return a;
 	}
-	
+
       default:
 	if (a->kind == EK_ADDR) {
 	    ex = a->args[0];
@@ -3574,19 +3582,19 @@ Expr *a;
 				makeexpr_addr(a->args[1]));
     } else {
         switch (a->val.type->kind) {
-	    
+
 	  case TK_ARRAY:
 	  case TK_STRING:
 	  case TK_SET:
 	    if (a->val.type->smin) {
-		return makeexpr_un(EK_ADDR, type, 
-				   makeexpr_index(a, 
+		return makeexpr_un(EK_ADDR, type,
+				   makeexpr_index(a,
 						  copyexpr(a->val.type->smin),
 						  NULL));
 	    }
 	    a->val.type = type;
 	    return a;
-	    
+
 	  default:
 	    if (a->kind == EK_HAT) {
 		ex = a->args[0];
@@ -3714,7 +3722,7 @@ int incskipped;
             return makeexpr_long(1);
 
         case TK_SUBR:
-	    btype = findbasetype(ex->val.type, 0);
+	    btype = findbasetype(ex->val.type, ODECL_NOPRES);
 	    if (btype->kind == TK_CHAR || btype == tp_abyte) {
 		freeexpr(ex);
 		return makeexpr_long(1);
@@ -4286,7 +4294,7 @@ Expr *a, *b;
             } else if (sprintflength(ex2, 0) >= 0) {    /* s := s + 's2' */
 		tp = ex2->val.type;
                 return makeexpr_bicall_2("strcat", tp,
-                                         makeexpr_addrstr(a), 
+                                         makeexpr_addrstr(a),
                                          makeexpr_unsprintfify(ex2));
             } else {                            /* general case */
                 canceltempvar(mp);
@@ -4651,7 +4659,7 @@ Expr *ex;
     if (ex->kind == EK_CONST)
         return ex->val.i;
     if (ex->kind == EK_VAR && foldstrconsts != 0 &&
-        (mp = (Meaning *)(ex->val.i))->kind == MK_CONST)
+        (mp = (Meaning *)(ex->val.i))->kind == MK_CONST && mp->val.type)
         return mp->val.i;
     if (ex->kind == EK_BICALL) {
 	if (!strcmp(ex->val.s, strsubname)) {
@@ -4687,8 +4695,8 @@ Expr *ex;
 {
     return (ex->kind == EK_BICALL && !strcmp(ex->val.s, "sprintf") &&
             ex->nargs >= 2 &&
-            istempvar(ex->args[0]) && 
-            ex->args[1]->kind == EK_CONST && 
+            istempvar(ex->args[0]) &&
+            ex->args[1]->kind == EK_CONST &&
             ex->args[1]->val.type->kind == TK_STRING);
 }
 
@@ -5098,7 +5106,7 @@ Expr *ex;
 	return makeexpr_long(ex->val.i);
     if (ex->kind == EK_VAR &&
 	(mp = (Meaning *)ex->val.i)->kind == MK_CONST &&
-	mp->type == tp_str255)
+	mp->type == tp_str255 && mp->val.type)
 	return makeexpr_long(mp->val.i);
     if (ex->kind == EK_VAR &&
         (mp = (Meaning *)ex->val.i)->kind == MK_VARPARAM &&
@@ -5211,7 +5219,7 @@ int pasc;
             return 1;
 
         case TK_SUBR:
-            type = findbasetype(type, 0);
+            type = findbasetype(type, ODECL_NOPRES);
             if (pasc) {
                 if (type == tp_integer || type == tp_unsigned)
                     return 4;
@@ -5238,7 +5246,7 @@ int pasc;
         case TK_ENUM:
 	    if (!pasc)
 		return CHECKSIZE(sizeof_enum);
-	    type = findbasetype(type, 0);
+	    type = findbasetype(type, ODECL_NOPRES);
             return type->kind != TK_ENUM ? type_sizeof(type, pasc)
 		   : CHECKSIZE(pascalenumsize);
 
@@ -5290,7 +5298,7 @@ int pasc;
 
         case EK_VAR:
             mp = (Meaning *) ex->val.i;
-            if (mp->kind == MK_CONST && 
+            if (mp->kind == MK_CONST &&
                 (foldconsts != 0 ||
                  mp == mp_maxint || mp == mp_minint))
                 return mp->val;
@@ -5304,36 +5312,42 @@ int pasc;
 
         case EK_PLUS:
             val = eval_expr_either(ex->args[0], pasc);
-            if (!val.type || ord_type(val.type) != tp_integer)
+            if (!val.type || ord_type(val.type)->kind != TK_INTEGER)
                 val.type = NULL;
             for (i = 1; val.type && i < ex->nargs; i++) {
                 val2 = eval_expr_either(ex->args[i], pasc);
-                if (!val2.type || ord_type(val2.type) != tp_integer)
+                if (!val2.type || ord_type(val2.type)->kind != TK_INTEGER)
                     val.type = NULL;
-                else
+                else {
                     val.i += val2.i;
+		    val.type = tp_integer;
+		}
             }
             return val;
 
         case EK_TIMES:
             val = eval_expr_either(ex->args[0], pasc);
-            if (!val.type || ord_type(val.type) != tp_integer)
+            if (!val.type || ord_type(val.type)->kind != TK_INTEGER)
                 val.type = NULL;
             for (i = 1; val.type && i < ex->nargs; i++) {
                 val2 = eval_expr_either(ex->args[i], pasc);
-                if (!val2.type || ord_type(val2.type) != tp_integer)
+                if (!val2.type || ord_type(val2.type)->kind != TK_INTEGER)
                     val.type = NULL;
-                else
+                else {
                     val.i *= val2.i;
+		    val.type = tp_integer;
+		}
             }
             return val;
 
         case EK_DIV:
             val = eval_expr_either(ex->args[0], pasc);
             val2 = eval_expr_either(ex->args[1], pasc);
-            if (val.type && ord_type(val.type) == tp_integer &&
-                val2.type && ord_type(val2.type) == tp_integer && val2.i) {
+            if (val.type && ord_type(val.type)->kind == TK_INTEGER &&
+                val2.type && ord_type(val2.type)->kind == TK_INTEGER &&
+		val2.i) {
                 val.i /= val2.i;
+		val.type = tp_integer;
                 return val;
             }
             break;
@@ -5341,9 +5355,11 @@ int pasc;
         case EK_MOD:
             val = eval_expr_either(ex->args[0], pasc);
             val2 = eval_expr_either(ex->args[1], pasc);
-            if (val.type && ord_type(val.type) == tp_integer &&
-                val2.type && ord_type(val2.type) == tp_integer && val2.i) {
+            if (val.type && ord_type(val.type)->kind == TK_INTEGER &&
+                val2.type && ord_type(val2.type)->kind == TK_INTEGER &&
+		val2.i) {
                 val.i %= val2.i;
+		val.type = tp_integer;
                 return val;
             }
             break;

@@ -1282,11 +1282,23 @@ int size;
 
 
 
+int isembedcomment(cmt)
+Strlist *cmt;
+{
+    int len = strlen(embedcomment);
+    return (cmt && len > 0 && !strncmp(cmt->s, embedcomment, len) &&
+	    (isspace(cmt->s[len]) ||
+	     (!cmt->s[len] && cmt->next &&
+	      (*cmt->next->s == '\002' || *cmt->next->s == '\003'))));
+}
+
+
 Strlist *outcomments(cmt)
 Strlist *cmt;
 {
     char *cp;
     int saveindent = outindent, savesingle = deltaindent, theindent;
+    int saveeat = eatcomments;
     int i = 0;
 
     if (!cmt)
@@ -1309,22 +1321,21 @@ Strlist *cmt;
 	return cmt->next;
     }
     dontbreaklines++;
-    if (!strcmp(cmt->s, embedcomment) && *embedcomment && cmt->next &&
-	(*cmt->next->s == '\002' || *cmt->next->s == '\003')) {
-	cmt = cmt->next;
+    if (isembedcomment(cmt)) {
 	embeddedcode = 1;
-	theindent = 0;
-	cp = cmt/*->next*/->s + 1;
-	while (*cp++ == ' ')
-	    theindent++;
-    } else if (!strncmp(cmt->s, embedcomment, strlen(embedcomment)) &&
-	       isspace(cmt->s[strlen(embedcomment)]) &&
-	       *embedcomment) {
-	strcpy(cmt->s, cmt->s + strlen(embedcomment) + 1);
-	embeddedcode = 1;
-	moreindent(deltaindent);
-	theindent = outindent;
-	deltaindent = 0;
+	eatcomments = 0;
+	if (!strcmp(cmt->s, embedcomment)) {
+	    cmt = cmt->next;
+	    theindent = 0;
+	    cp = cmt/*->next*/->s + 1;
+	    while (*cp++ == ' ')
+		theindent++;
+	} else {
+	    strcpy(cmt->s, cmt->s + strlen(embedcomment) + 1);
+	    moreindent(deltaindent);
+	    theindent = outindent;
+	    deltaindent = 0;
+	}
     } else {
 	moreindent(deltaindent);
 	if (cmt->s[0] == '\004')
@@ -1345,6 +1356,8 @@ Strlist *cmt;
 	    for (i = 0; *cp == ' ' && i < theindent; i++)
 		cp++;
 	    i = *cp;
+	    if (*cp == '#')
+		outindent = 0;
 	}
 	output(cp);
 	if (cmtdebug)
@@ -1375,6 +1388,7 @@ Strlist *cmt;
     outindent = saveindent;
     deltaindent = savesingle;
     dontbreaklines--;
+    eatcomments = saveeat;
     return cmt;
 }
 

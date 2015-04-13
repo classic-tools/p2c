@@ -1304,7 +1304,8 @@ int flags;
     static Type typename;
 
     for (;;) {
-	if (type->preserved && (type->kind != TK_POINTER))
+	if (type->preserved && (type->kind != TK_POINTER) &&
+	    !(flags & ODECL_NOPRES))
 	    return type;
         switch (type->kind) {
 
@@ -1334,7 +1335,7 @@ int flags;
 		    default:
 			break;
                 }
-		if (type->preserved)
+		if (type->preserved && !(flags & ODECL_NOPRES))
 		    return type;
 		if (type->fbase && type->fbase->wasdeclared &&
 		    (flags & ODECL_DECL)) {
@@ -1505,7 +1506,7 @@ Type *tp;
          tp->kind == TK_INTEGER ||
          tp->kind == TK_CHAR ||
          tp->kind == TK_BOOLEAN) {
-        tp2 = findbasetype(tp, 0);
+        tp2 = findbasetype(tp, ODECL_NOPRES);
 	if (tp2 == tp_ushort && sizeof_int == 16)
 	    return tp_uint;
         else if (tp2 == tp_sbyte || tp2 == tp_ubyte ||
@@ -2431,11 +2432,14 @@ int i;
 
 
 
+Static int var_mixable;
+
 void declarevar(mp, which)
 Meaning *mp;
 int which;    /* 0x1=header, 0x2=body, 0x4=trailer, 0x8=in varstruct */
 {
-    int isstatic, isstructconst, saveindent;
+    int isstatic, isstructconst, saveindent, i;
+    Strlist *sl;
 
     isstructconst = checkstructconst(mp);
     isstatic = varstorageclass(mp);
@@ -2463,17 +2467,41 @@ int which;    /* 0x1=header, 0x2=body, 0x4=trailer, 0x8=in varstruct */
                 intwarning("declarevar",
                     format_s("Variable %s initializer not removed [125]", mp->name));
             } else {
-                output(" = ");
                 if (isstructconst) {
-                    output("{\n");
+                    output(" = {\n");
 		    saveindent = outindent;
 		    moreindent(tabsize);
 		    moreindent(structinitindent);
                     out_expr((Expr *)mp->constdefn->val.i);
                     outindent = saveindent;
                     output("\n}");
-                } else
+		    var_mixable = 0;
+		} else if (mp->type->kind == TK_ARRAY &&
+			   mp->constdefn->val.type->kind == TK_STRING &&
+			   !initpacstrings) {
+		    if (mp->ctx->kind == MK_MODULE) {
+			sl = strlist_append(&initialcalls,
+					    format_sss("memcpy(%s,\002 %s,\002 sizeof(%s))",
+						       mp->name,
+						       makeCstring(mp->constdefn->val.s,
+								   mp->constdefn->val.i),
+						       mp->name));
+			sl->value = 1;
+		    } else if (mp->isforward) {
+			output(" = {\005");
+			for (i = 0; i < mp->constdefn->val.i; i++) {
+			    if (i > 0)
+				output(",\001");
+			    output(makeCchar(mp->constdefn->val.s[i]));
+			}
+			output("}");
+			mp->constdefn = NULL;
+			var_mixable = 0;
+		    }
+                } else {
+		    output(" = ");
                     out_expr(mp->constdefn);
+		}
             }
         }
     }
@@ -2568,9 +2596,10 @@ int invarstruct;
         flag = 1;
         first = 1;
         mp0 = mp2 = mp;
+	var_mixable = 1;
         while (mp) {
             if ((varkind(mp->kind) || checkvarmac(mp)) &&
-		!mp->wasdeclared &&
+		!mp->wasdeclared && var_mixable &&
 		mp->dtype == mp0->dtype &&
                 varstorageclass(mp) == varstorageclass(mp0) &&
                 mp->varstructflag == invarstruct && mp->refcount > 0) {
@@ -3379,9 +3408,8 @@ Meaning ***confp;
             if (ord_range(tp->indextype, &smin, NULL) &&
                 smin > 0 && smin <= fullbitsize - bitsize) {
                 tp->smin = makeexpr_val(make_ord(tp->indextype->basetype, smin));
-                tp->indextype = makesubrangetype(tp->indextype->basetype,
-                                                 makeexpr_val(make_ord(
-                                                     tp->indextype->basetype, 0)),
+		ex = makeexpr_val(make_ord(tp->indextype->basetype, 0));
+                tp->indextype = makesubrangetype(tp->indextype->basetype, ex,
                                                  copyexpr(tp->indextype->smax));
             }
         } else {
@@ -3935,6 +3963,8 @@ Meaning *tname;
         default:
             tp = maketype(TK_SUBR);
             tp->smin = p_ord_expr();
+	    if (curtok == TOK_COLON)
+		curtok = TOK_DOTS;    /* UCSD Pascal */
 	    if (wexpecttok(TOK_DOTS)) {
 		gettok();
 		tp->smax = p_ord_expr();
@@ -3947,6 +3977,12 @@ Meaning *tname;
 		    break;
 		}
 		tp->basetype = ord_type(tp->smin->val.type);
+		if (sizespec >= 0) {
+		    long smin, smax;
+		    if (ord_range(tp, &smin, &smax) &&
+			typebits(smin, smax) == sizespec)
+			sizespec = -1;
+		}
 	    } else {
 		tp = tp_integer;
 	    }
@@ -3983,6 +4019,8 @@ int *isfunc, istype;
         prevm = &type->fbase;
         do {
             gettok();
+	    if (curtok == TOK_RPAR)
+		break;
 	    p_mech_spec(1);
 	    p_attributes();
 	    checkkeyword(TOK_ANYVAR);
@@ -5239,7 +5277,7 @@ void p_valuedecl()
 	if (!curtokmeaning ||
 	    curtokmeaning->kind != MK_VAR) {
 	    warning(format_s("Initializer ignored for variable %s [139]",
-			     curtokmeaning->name));
+			     curtokbuf));
 	    skippasttoken(TOK_SEMI);
 	} else {
 	    mp = curtokmeaning;

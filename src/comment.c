@@ -72,7 +72,8 @@ Strlist *cmt;
 {
     return (cmt &&
 	    getcommentkind(cmt) != CMT_DONE &&
-	    eatcomments != 1 && eatcomments != 2);
+	    ((eatcomments != 1 && eatcomments != 2) ||
+	     isembedcomment(cmt)));
 }
 
 

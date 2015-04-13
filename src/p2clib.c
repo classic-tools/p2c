@@ -68,7 +68,7 @@ Anyptr my_memmove(Anyptr d, Const Anyptr s, size_t n)
 #else
 Anyptr my_memmove(d, s, n)
 Anyptr d, s;
-register long n;
+register int n;
 #endif
 {
     register char *dd = (char *)d, *ss = (char *)s;
@@ -77,7 +77,7 @@ register long n;
     } else if (n > 0) {
 	dd += n;
 	ss += n;
-	while (--n >= 0)
+	while (n-- > 0)
 	    *--dd = *--ss;
     }
     return d;
@@ -89,11 +89,11 @@ Anyptr my_memcpy(Anyptr d, Const Anyptr s, size_t n)
 #else
 Anyptr my_memcpy(d, s, n)
 Anyptr d, s;
-register long n;
+register int n;
 #endif
 {
     register char *ss = (char *)s, *dd = (char *)d;
-    while (--n >= 0)
+    while (n-- > 0)
 	*dd++ = *ss++;
     return d;
 }
@@ -103,12 +103,12 @@ int my_memcmp(Const Anyptr s1, Const Anyptr s2, size_t n)
 #else
 int my_memcmp(s1, s2, n)
 Anyptr s1, s2;
-register long n;
+register int n;
 #endif
 {
     register char *a = (char *)s1, *b = (char *)s2;
     register int i;
-    while (--n >= 0)
+    while (n-- > 0)
 	if ((i = (*a++) - (*b++)) != 0)
 	    return i;
     return 0;
@@ -120,11 +120,11 @@ Anyptr my_memset(Anyptr d, int c, size_t n)
 Anyptr my_memset(d, c, n)
 Anyptr d;
 register int c;
-register long n;
+register int n;
 #endif
 {
     register char *dd = (char *)d;
-    while (--n >= 0)
+    while (n-- > 0)
 	*dd++ = c;
     return d;
 }
@@ -164,7 +164,7 @@ long a, b;
     if (b < 0)
 	return 0;
     if (a == 2)
-	return 1 << b;
+	return 1L << b;
     v = (b & 1) ? a : 1;
     while ((b >>= 1) > 0) {
 	a *= a;
@@ -635,7 +635,7 @@ register long *s;
     register int bit;
     bit = val % SETBITS;
     val /= SETBITS;
-    if (val < *s++ && ((1<<bit) & s[val]))
+    if (val < *s++ && ((1L<<bit) & s[val]))
 	return 1;
     return 0;
 }
@@ -657,7 +657,7 @@ register unsigned val;
         *sbase = size;
     } else
         s += val;
-    *s |= 1<<bit;
+    *s |= 1L<<bit;
     return sbase;
 }
 
@@ -684,12 +684,12 @@ register unsigned v1, v2;
     }
     s += v1;
     if (v1 == v2) {
-        *s |= (~((-2)<<(b2-b1))) << b1;
+        *s |= (~((-2L)<<(b2-b1))) << b1;
     } else {
-        *s++ |= (-1) << b1;
+        *s++ |= (-1L) << b1;
         while (++v1 < v2)
             *s++ = -1;
-        *s |= ~((-2) << b2);
+        *s |= ~((-2L) << b2);
     }
     return sbase;
 }
@@ -703,7 +703,7 @@ register unsigned val;
     bit = val % SETBITS;
     val /= SETBITS;
     if (++val <= *s) {
-	if (!(s[val] &= ~(1<<bit)))
+	if (!(s[val] &= ~(1L<<bit)))
 	    while (*s && !s[*s])
 		(*s)--;
     }
@@ -825,6 +825,38 @@ int *Day, *Month, *Year, *Hour, *Min, *Sec;
     *Min = tm->tm_min;
     *Sec = tm->tm_sec;
 #endif
+}
+
+Void VAXdate(s)
+char *s;
+{
+    long clock;
+    char *c;
+    int i;
+    static int where[] = {8, 9, 0, 4, 5, 6, 0, 20, 21, 22, 23};
+
+    time(&clock);
+    c = ctime(&clock);
+    for (i = 0; i < 11; i++)
+	s[i] = my_toupper(c[where[i]]);
+    s[2] = '-';
+    s[6] = '-';
+}
+
+Void VAXtime(s)
+char *s;
+{
+    long clock;
+    char *c;
+    int i;
+
+    time(&clock);
+    c = ctime(&clock);
+    for (i = 0; i < 8; i++)
+	s[i] = c[i+11];
+    s[8] = '.';
+    s[9] = '0';
+    s[10] = '0';
 }
 
 

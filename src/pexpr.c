@@ -28,9 +28,9 @@ Expr *ex;
 Type *target;
 {
     Expr *ex2, *ex3;
-    Type *tp, *tp2, *ot;
+    Type *tp, *tp2;
     Meaning *mp, *tvar;
-    int bits, hassl;
+    int hassl;
 
     for (;;) {
 	if ((ex->val.type->kind == TK_PROCPTR ||
@@ -96,51 +96,8 @@ Type *target;
             case TOK_LBR:
                 do {
                     gettok();
-                    tp = ex->val.type;
-                    if (tp->kind == TK_STRING) {
-                        ex2 = p_expr(tp_integer);
-                        if (checkconst(ex2, 0))   /* is it "s[0]"? */
-                            ex = makeexpr_bicall_1("strlen", tp_char, ex);
-                        else
-                            ex = makeexpr_index(ex, ex2, makeexpr_long(1));
-                    } else if (tp->kind == TK_ARRAY ||
-                               tp->kind == TK_SMALLARRAY) {
-                        if (tp->smax) {
-                            ord_range_expr(tp->indextype, &ex2, NULL);
-                            ex2 = makeexpr_minus(p_ord_expr(),
-						 copyexpr(ex2));
-                            if (!nodependencies(ex2, 0) &&
-                                *getbitsname == '*') {
-                                mp = makestmttempvar(tp_integer, name_TEMP);
-                                ex3 = makeexpr_assign(makeexpr_var(mp), ex2);
-                                ex2 = makeexpr_var(mp);
-                            } else
-                                ex3 = NULL;
-                            ex = makeexpr_bicall_3(getbitsname, tp_int,
-                                                   ex, ex2,
-                                                   makeexpr_long(tp->escale));
-                            if (tp->kind == TK_ARRAY) {
-                                if (tp->basetype == tp_sshort)
-                                    bits = 4;
-                                else
-                                    bits = 3;
-                                insertarg(&ex, 3, makeexpr_long(bits));
-                            }
-                            ex = makeexpr_comma(ex3, ex);
-                            ot = ord_type(tp->smax->val.type);
-                            if (ot->kind == TK_ENUM && ot->meaning && useenum)
-                                ex = makeexpr_cast(ex, tp->smax->val.type);
-                            ex->val.type = tp->smax->val.type;
-                        } else {
-                            ord_range_expr(ex->val.type->indextype, &ex2, NULL);
-                            if (debug>2) { fprintf(outf, "ord_range_expr returns "); dumpexpr(ex2); fprintf(outf, "\n"); }
-                            ex = makeexpr_index(ex, p_ord_expr(),
-						copyexpr(ex2));
-                        }
-                    } else {
-                        warning("Index on a non-array variable [287]");
-			ex = makeexpr_bin(EK_INDEX, tp_integer, ex, p_expr(tp_integer));
-		    }
+		    ex2 = p_ord_expr();
+		    ex = p_index(ex, ex2);
                 } while (curtok == TOK_COMMA);
                 if (!wneedtok(TOK_RBR))
 		    skippasttotoken(TOK_RBR, TOK_SEMI);
@@ -185,6 +142,59 @@ Type *target;
     }
 }
 
+
+Expr *p_index(ex, ex2)
+Expr *ex, *ex2;
+{
+    Expr *ex3;
+    Type *tp, *ot;
+    Meaning *mp;
+    int bits;
+
+    tp = ex->val.type;
+    if (tp->kind == TK_STRING) {
+	if (checkconst(ex2, 0))   /* is it "s[0]"? */
+	    return makeexpr_bicall_1("strlen", tp_char, ex);
+	else
+	    return makeexpr_index(ex, ex2, makeexpr_long(1));
+    } else if (tp->kind == TK_ARRAY ||
+	       tp->kind == TK_SMALLARRAY) {
+	if (tp->smax) {
+	    ord_range_expr(tp->indextype, &ex3, NULL);
+	    ex2 = makeexpr_minus(ex2, copyexpr(ex3));
+	    if (!nodependencies(ex2, 0) &&
+		*getbitsname == '*') {
+		mp = makestmttempvar(tp_integer, name_TEMP);
+		ex3 = makeexpr_assign(makeexpr_var(mp), ex2);
+		ex2 = makeexpr_var(mp);
+	    } else
+		ex3 = NULL;
+	    ex = makeexpr_bicall_3(getbitsname, tp_int,
+				   ex, ex2,
+				   makeexpr_long(tp->escale));
+	    if (tp->kind == TK_ARRAY) {
+		if (tp->basetype == tp_sshort)
+		    bits = 4;
+		else
+		    bits = 3;
+		insertarg(&ex, 3, makeexpr_long(bits));
+	    }
+	    ex = makeexpr_comma(ex3, ex);
+	    ot = ord_type(tp->smax->val.type);
+	    if (ot->kind == TK_ENUM && ot->meaning && useenum)
+		ex = makeexpr_cast(ex, tp->smax->val.type);
+	    ex->val.type = tp->smax->val.type;
+	    return ex;
+	} else {
+	    ord_range_expr(ex->val.type->indextype, &ex3, NULL);
+	    if (debug>2) { fprintf(outf, "ord_range_expr returns "); dumpexpr(ex3); fprintf(outf, "\n"); }
+	    return makeexpr_index(ex, ex2, copyexpr(ex3));
+	}
+    } else {
+	warning("Index on a non-array variable [287]");
+	return makeexpr_bin(EK_INDEX, tp_integer, ex, ex2);
+    }
+}
 
 
 Expr *fake_dots_n_hats(ex)
@@ -517,7 +527,7 @@ int sure;
         }
         first[num] = ex = gentle_cast(ex, type);
         doneflag[num] = 0;
-        if (curtok == TOK_DOTS) {
+        if (curtok == TOK_DOTS || curtok == TOK_COLON) {   /* UCSD? */
             val = eval_expr(ex);
             if (val.type) {
 		if (val.i > maxv) {     /* In case of [127..0] */
@@ -790,7 +800,15 @@ int firstarg, ismacro;
 		    if (isnonpos)
 			note("Non-positional conformant parameters may not work [279]");
                 } else {                        /* regular VAR parameter */
-                    ex2 = makeexpr_addrf(ex2);
+		    if (!expr_is_lvalue(ex2) ||
+			(tp->kind == TK_REAL &&
+			 ord_type(tp2)->kind == TK_INTEGER)) {
+			mp2 = makestmttempvar(tp, name_TEMP);
+			ex2 = makeexpr_comma(makeexpr_assign(makeexpr_var(mp2),
+							     ex2),
+					     makeexpr_addrf(makeexpr_var(mp2)));
+		    } else
+			ex2 = makeexpr_addrf(ex2);
                     if (args->anyvarflag ||
                         (tp->kind == TK_POINTER && tp2->kind == TK_POINTER &&
                          (tp == tp_anyptr || tp2 == tp_anyptr))) {
@@ -1238,8 +1256,9 @@ Type *target;
 			    ex = makeexpr_long(0);
 			return ex;
                     } else {
-			if (target->kind == TK_PROCPTR ||
-			    target->kind == TK_CPROCPTR)
+			if (target &&
+			    (target->kind == TK_PROCPTR ||
+			     target->kind == TK_CPROCPTR))
 			    note("Using a built-in procedure as a procedure pointer [316]");
                         else
 			    symclass(curtoksym);
@@ -2470,8 +2489,18 @@ int env;
 
         case EK_AND:
         case EK_OR:
-            for (i = 0; i < ex->nargs; i++)
+            for (i = 0; i < ex->nargs; ) {
                 ex->args[i] = fixexpr(ex->args[i], ENV_BOOL);
+		if (checkconst(ex->args[i], (ex->kind == EK_OR) ? 0 : 1) &&
+		    ex->nargs > 1)
+		    delfreearg(&ex, i);
+		else if (checkconst(ex->args[i], (ex->kind == EK_OR) ? 1 : 0))
+		    return grabarg(ex, i);
+		else
+		    i++;
+	    }
+	    if (ex->nargs == 1)
+		ex = grabarg(ex, 0);
             break;
 
         case EK_EQ:
@@ -2901,6 +2930,7 @@ int prec;
                 if (ex2->kind == EK_VAR) {
                     mp = (Meaning *)ex2->val.i;
                     if (mp->kind == MK_CONST &&
+			mp->val.type &&
                         (mp->val.type->kind == TK_RECORD ||
                          mp->val.type->kind == TK_ARRAY)) {
                         if (foldconsts != 1)
@@ -3157,7 +3187,10 @@ int prec;
 
         case EK_SIZEOF:
             setprec(14);
-            output("sizeof(");
+            output("sizeof");
+	    if (spacefuncs)
+		output(" ");
+	    output("(");
 	    out_expr(ex->args[0]);
             output(")");
             break;

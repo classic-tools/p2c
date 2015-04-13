@@ -268,11 +268,14 @@ Stmt *sp, *spnew;
 {
     Stmt *snext;
 
-    snext = sp->next;
-    *sp = *spnew;
-    while (sp->next)
-        sp = sp->next;
-    sp->next = snext;
+    if (spnew) {
+	snext = sp->next;
+	*sp = *spnew;
+	while (sp->next)
+	    sp = sp->next;
+	sp->next = snext;
+    } else
+	nukestmt(sp);
 }
 
 
@@ -664,7 +667,7 @@ again:
             tvar = NULL;
 	    swexpr = NULL;
             if (ep->kind == EK_VAR) {
-                tp = findbasetype(ep->val.type, 0);
+                tp = findbasetype(ep->val.type, ODECL_NOPRES);
                 if ((tp == tp_char || tp == tp_schar || tp == tp_uchar ||
                      tp == tp_abyte || tp == tp_sbyte || tp == tp_ubyte ||
 		     tp == tp_boolean) &&
@@ -1353,34 +1356,44 @@ int opts, serial;
                         output(format_s(name_LINK, ctx->ctx->name));
                         output(";\n");
                     }
-                    for (mp = ctx->cbase; mp; mp = mp->cnext) {
-                        if ((mp->kind == MK_VAR ||    /* these are variables with */
+		    for (mp = ctx->cbase; mp; mp = mp->cnext) {
+			if ((mp->kind == MK_VAR ||    /* these are variables with */
 			     mp->kind == MK_VARREF) &&
-			    mp->varstructflag &&      /* initializers which were moved */
-			    mp->cnext &&              /* into a varstruct, so they */
-			    mp->cnext->snext == mp && /* must be initialized now */
-			    mp->cnext->constdefn) {
-                            if (mp->type->kind == TK_ARRAY) {
-                                output("memcpy(");
-                                out_var(mp, 2);
-                                output(",");
+			    ((mp->varstructflag &&      /* initializers which were moved */
+			      mp->cnext &&              /* into a varstruct, so they */
+			      mp->cnext->snext == mp && /* must be initialized now */
+			      mp->cnext->constdefn &&
+			      ctx->kind == MK_FUNCTION) ||
+			     (mp->constdefn &&
+			      mp->type->kind == TK_ARRAY &&
+			      mp->constdefn->val.type->kind == TK_STRING &&
+			      !initpacstrings))) {
+			    if (mp->type->kind == TK_ARRAY) {
+				output("memcpy(");
+				out_var(mp, 2);
+				output(",\002");
 				if (spacecommas)
 				    output(" ");
-                                out_var(mp->cnext, 2);
-                                output(",");
+				if (mp->constdefn) {
+				    output(makeCstring(mp->constdefn->val.s,
+						       mp->constdefn->val.i));
+				    mp->constdefn = NULL;
+				} else
+				    out_var(mp->cnext, 2);
+				output(",\002");
 				if (spacecommas)
 				    output(" ");
-                                output("sizeof(");
-                                out_type(mp->type, 1);
-                                output("))");
-                            } else {
-                                out_var(mp, 2);
-                                output(" = ");
-                                out_var(mp->cnext, 2);
-                            }
-                            output(";\n");
-                        }
-                    }
+				output("sizeof(");
+				out_type(mp->type, 1);
+				output("))");
+			    } else {
+				out_var(mp, 2);
+				output(" = ");
+				out_var(mp->cnext, 2);
+			    }
+			    output(";\n");
+			}
+		    }
                 }
                 break;
 
@@ -2553,6 +2566,15 @@ Stmt **spp, *thereturn;
                     }
                 }
                 sp->exp1 = fixexpr(sp->exp1, ENV_BOOL);
+		if (elimdeadcode > 1 && checkconst(sp->exp1, 0)) {
+		    note("Eliminated \"if false\" statement [326]");
+		    splicestmt(sp, sp->stm2);
+		    continue;
+		} else if (elimdeadcode > 1 && checkconst(sp->exp1, 1)) {
+		    note("Eliminated \"if true\" statement [327]");
+		    splicestmt(sp, sp->stm1);
+		    continue;
+		}
                 break;
 
             case SK_WHILE:
@@ -3465,7 +3487,8 @@ int isfunc;
 	strlist_empty(&curcomments);
 	if (curtok == TOK_IDENT &&
 	    (!strcicmp(curtokbuf, "FORWARD") ||
-	     strlist_cifind(externwords, curtokbuf))) {
+	     strlist_cifind(externwords, curtokbuf) ||
+	     strlist_cifind(cexternwords, curtokbuf))) {
 	    gettok();
 	    while (curtok == TOK_IDENT)
 		gettok();

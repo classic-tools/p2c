@@ -4,6 +4,56 @@ Summary of changes to "p2c"
 ------- -- ------- --  ---
 
 
+Version 1.20:
+
+ * Changed VAX "type t = [byte] 0..255" not to say it can't interpret size.
+
+ * Changed to use a temp var when passing a constant to a VAR parameter.
+
+ * Changed to avoid initializing char arrays with string literals in pre-ANSI.
+
+ * Changed to make arithmetic involving character literals more readable.
+
+ * Changed to accept empty parentheses in function declarations (for Modula 2).
+
+ * Made more changes for VAX and MSDOS compatibility (thanks to William Bader).
+
+ * Added support for PACK and UNPACK procedures (finally!).
+
+ * EMBED lines beginning with `#' are no longer indented.
+
+ * EatComments no longer eats EMBED comments.
+
+ * Reworded "File paramter needs associated buffers" to suggest StructFiles.
+
+ * Added ability to eliminate "if false" and "if true" if ElimDeadCode = 2.
+
+ * Bug fix in funcs.c:handleread/write_text: Treated case where fex is a PAC.
+   Symptom: VAX Pascal readv/writev failed when "string" was an array of chars.
+
+ * Bug fix in expr.c:makeexpr_charcast: Watch for mp->val.type == NULL case.
+   Symptom: Reference to NULL error when referring to some CONST names.
+   (Also fixed this bug in various other places.)
+
+ * Bug fix in expr.c:eval_expr_either: Check for TK_INTEGER, not tp_integer.
+   Symptom: Constant exprs involving +, *, etc. could not always be evaluated.
+
+ * Bug fix in pexpr.c:p_factor:MK_SPECIAL case: Added "target &&" check.
+   Symptom: Reference to NULL in VAX Pascal "open(..., ..., new)".
+
+ * Bug fix in p2clib.c:my_memcpy etc.: Use n-- > 0 instead of --n >= 0.
+   Symptom: Didn't work when size_t is an unsigned integer type.
+
+ * Bug fix in p2clib.c:ipow: Changed 1<< to 1L<< (also in set functions).
+   Symptom: Didn't work on 16-bit target machines.
+
+ * Bug fix in funcs.c:handleread_text: Write %g for float, %lg for double.
+   Symptom: Bad code for reading a "single" or "shortreal" variable.
+
+ * Added to sys.p2crc/trans.h the following configuration parameter:
+
+    InitPACStrings      String literal in initializer can be size of array.
+
 Version 1.19:
 
  * P2c's copyright has been assigned to the Free Software Foundation.

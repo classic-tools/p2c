@@ -358,6 +358,8 @@ Static void postrc()
         starfunctions = (ansiC > 0) ? 0 : 1;
     if (variablearrays < 0)
 	variablearrays = (ansiC > 1) ? 1 : 0;
+    if (initpacstrings < 0)
+	initpacstrings = (ansiC > 0) ? 1 : 0;
     if (*memcpyname) {
         if (ansiC > 0 || which_unix == UNIX_SYSV)
             strcpy(memcpyname, "memcpy");

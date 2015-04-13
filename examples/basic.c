@@ -1,5 +1,5 @@
 /* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/basic.p" */
+/* From input file "basic.p" */
 
 
 /*$ debug$*/
@@ -283,7 +283,7 @@ double n;
     sprintf(s, "% .5E", n);
     i = strlen(s) + 1;
     s[i - 1] = '\0';
-/* p2c: dist/examples/basic.p, line 237:
+/* p2c: basic.p, line 237:
  * Note: Modification of string length may translate incorrectly [146] */
     return strcpy(Result, s);
   } else {
@@ -295,7 +295,7 @@ double n;
     if (s[i - 1] == '.')
       i--;
     s[i] = '\0';
-/* p2c: dist/examples/basic.p, line 248:
+/* p2c: basic.p, line 248:
  * Note: Modification of string length may translate incorrectly [146] */
     return strcpy(Result, strltrim(s));
   }
@@ -353,7 +353,7 @@ tokenrec **buf;
 	  i++;
 	}
 	t->UU.sp[j] = '\0';
-/* p2c: dist/examples/basic.p, line 415:
+/* p2c: basic.p, line 415:
  * Note: Modification of string length may translate incorrectly [146] */
 	i++;
 	break;
@@ -442,7 +442,7 @@ tokenrec **buf;
 	    i++;
 	  }
 	  token[j] = '\0';
-/* p2c: dist/examples/basic.p, line 309:
+/* p2c: basic.p, line 309:
  * Note: Modification of string length may translate incorrectly [146] */
 	  if (!strcmp(token, "and") || !strcmp(token, "AND"))
 	    t->kind = tokand;
@@ -1427,12 +1427,10 @@ struct LOC_exec *LINK;
     break;
 
   case tokpeek:
-/* p2c: dist/examples/basic.p, line 1029:
- * Note: Range checking is OFF [216] */
+/* p2c: basic.p, line 1029: Note: Range checking is OFF [216] */
     trick.i = intfactor(LINK);
     n.UU.val = *trick.c;
-/* p2c: dist/examples/basic.p, line 1032:
- * Note: Range checking is ON [216] */
+/* p2c: basic.p, line 1032: Note: Range checking is ON [216] */
     break;
 
   default:
@@ -1485,7 +1483,7 @@ struct LOC_exec *LINK;
       tmerr();
     if (k == tokmod) {
       n.UU.val = (long)floor(n.UU.val + 0.5) % (long)floor(n2.UU.val + 0.5);
-/* p2c: dist/examples/basic.p, line 1078:
+/* p2c: basic.p, line 1078:
  * Note: Using % for possibly-negative arguments [317] */
     } else if (k == toktimes)
       n.UU.val *= n2.UU.val;
@@ -1552,8 +1550,8 @@ struct LOC_exec *LINK;
 	  (strcmp(n.UU.sval, n2.UU.sval) > 0 && (unsigned long)k < 32 &&
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
-/* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+8.00 seconds, 5000 tries on line 1554 [251] */
+/* p2c: basic.p, line 2175: Note:
+ * Line breaker spent 0.0+2.00 seconds, 5000 tries on line 1552 [251] */
       Free(n.UU.sval);
       Free(n2.UU.sval);
     } else
@@ -1566,8 +1564,8 @@ struct LOC_exec *LINK;
 	  (n.UU.val > n2.UU.val && (unsigned long)k < 32 &&
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
-/* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+9.00 seconds, 5000 tries on line 1568 [251] */
+/* p2c: basic.p, line 2175: Note:
+ * Line breaker spent 0.0+2.00 seconds, 5000 tries on line 1566 [251] */
     n.stringval = false;
     n.UU.val = f;
   }
@@ -2517,13 +2515,11 @@ struct LOC_exec *LINK;
     Char *c;
   } trick;
 
-/* p2c: dist/examples/basic.p, line 2073:
- * Note: Range checking is OFF [216] */
+/* p2c: basic.p, line 2073: Note: Range checking is OFF [216] */
   trick.i = intexpr(LINK);
   require(tokcomma, LINK);
   *trick.c = (Char)intexpr(LINK);
-/* p2c: dist/examples/basic.p, line 2077:
- * Note: Range checking is ON [216] */
+/* p2c: basic.p, line 2077: Note: Range checking is ON [216] */
 }
 
 

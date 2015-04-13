@@ -2136,9 +2136,12 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 {
     register char ch;
     int nestcount = 1, startlnum = inf_lnum, wasrel = 0, trailing;
-    int i, cmtindent, cmtindent2;
+    int i, cmtindent, cmtindent2, saveeat = eatcomments;
     char *cp;
 
+    if (!strncmp(inbufptr, embedcomment, strlen(embedcomment)) &&
+	*embedcomment)
+	eatcomments = 0;
     cp = inbuf;
     while (isspace(*cp))
 	cp++;
@@ -2162,6 +2165,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 			*curtokbuf = '\002';
 		    if (!commenting_flag)
 			commentline(trailing ? CMT_TRAIL : CMT_POST);
+		    eatcomments = saveeat;
                     return;
                 }
                 break;
@@ -2181,6 +2185,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 			*curtokbuf = '\002';
 		    if (!commenting_flag)
 			commentline(trailing ? CMT_TRAIL : CMT_POST);
+		    eatcomments = saveeat;
                     return;
                 }
                 break;
@@ -2235,6 +2240,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 
             case EOFMARK:
                 error(format_d("Runaway comment from line %d", startlnum));
+		eatcomments = saveeat;
                 return;     /* unnecessary */
 
         }
@@ -3344,7 +3350,8 @@ ident:
                         return;
                     }
                 } else {
-                    warning("Unrecognized character in file [247]");
+                    warning(format_d("Unrecognized character 0%o in file [247]",
+				     ch));
                 }
         }
     }
