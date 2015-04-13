@@ -10,6 +10,8 @@
 #define maxnamelen      30
 
 
+typedef Char str255[256];
+
 #define k_normal        0
 #define k_proc          1
 #define k_var           2
@@ -42,7 +44,7 @@ typedef struct node {
 Static FILE *f;
 Static Char fn[121];
 Static long fnum;
-Static Char buf[256], name[256];
+Static str255 buf, name;
 Static boolean good;
 Static long i, j, lnum;
 Static node *np, *base;
@@ -85,7 +87,7 @@ Static Void kw(name_, kind)
 Char *name_;
 short kind;
 {
-  Char name[256];
+  str255 name;
   node *np;
 
   strcpy(name, name_);
@@ -422,7 +424,7 @@ Char *argv[];
   f = NULL;
   if (f != NULL)
     fclose(f);
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
 

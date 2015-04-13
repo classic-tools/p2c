@@ -18,6 +18,10 @@
 
 
 
+typedef Char varnamestring[varnamelen + 1];
+
+
+typedef Char string255[256];
 
 #define tokvar          0
 #define toknum          1
@@ -128,7 +132,7 @@ typedef struct linerec {
 } linerec;
 
 typedef struct varrec {
-  Char name[varnamelen + 1];
+  varnamestring name;
   struct varrec *next;
   long dims[maxdims];
   char numdims;
@@ -271,7 +275,7 @@ Static Char *numtostr(Result, n)
 Char *Result;
 double n;
 {
-  Char s[256];
+  string255 s;
   long i;
 
   s[255] = '\0';
@@ -299,6 +303,9 @@ double n;
 
 
 #define toklength       20
+
+
+typedef long chset[9];
 
 
 
@@ -1546,7 +1553,7 @@ struct LOC_exec *LINK;
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
 /* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+12.00 seconds, 5000 tries on line 1547 [251] */
+ * Line breaker spent 0.0+15.00 seconds, 5000 tries on line 1554 [251] */
       Free(n.UU.sval);
       Free(n2.UU.sval);
     } else
@@ -1560,7 +1567,7 @@ struct LOC_exec *LINK;
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
 /* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+8.00 seconds, 5000 tries on line 1561 [251] */
+ * Line breaker spent 0.0+14.00 seconds, 5000 tries on line 1568 [251] */
     n.stringval = false;
     n.UU.val = f;
   }
@@ -1774,7 +1781,7 @@ struct LOC_exec *LINK;
 {
   linerec *l;
   long i;
-  Char s[256];
+  string255 s;
 
   l = linebase;
   if (!iseos(LINK)) {
@@ -1984,7 +1991,7 @@ Local Void cmdinput(LINK)
 struct LOC_exec *LINK;
 {
   varrec *v;
-  Char s[256];
+  string255 s;
   tokenrec *tok, *tok0, *tok1;
   boolean strflag;
 
@@ -2778,7 +2785,7 @@ Char *argv[];
 	putchar('\n');
     ENDTRY(try2);
   } while (!(exitflag || P_eof(stdin)));
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
 

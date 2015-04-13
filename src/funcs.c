@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -653,6 +653,7 @@ int code;
 	}
     }
     if (nex || isfiletype(fex->val.type, 1)) {
+	needcheckopen = 1;
 	if (!strcmp(freopenname, "fclose") ||
 	    !strcmp(freopenname, "fopen")) {
 	    sp2 = makestmt_assign(filebasename(copyexpr(fex)),
@@ -1798,7 +1799,8 @@ Stmt *proc_exit()
 	    gettok();
 	    skipcloseparen();
 	    return makestmt_call(makeexpr_bicall_1("exit", tp_void,
-						   makeexpr_long(0)));
+						   makeexpr_name("EXIT_SUCCESS",
+								 tp_integer)));
 	}
         if (curtok != TOK_IDENT || !curtokmeaning || curtokmeaning != curctx)
             note("Attempting to EXIT beyond this function [188]");

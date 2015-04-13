@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -1023,7 +1023,7 @@ Static Expr *func_stdout()
 
 Static Expr *func_stderr()
 {
-    return makeexpr_addr(makeexpr_name("stderr", tp_text));
+    return makeexpr_addr(makeexpr_var(mp_stderr));
 }
 
 

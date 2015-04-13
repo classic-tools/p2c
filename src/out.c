@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -111,7 +111,8 @@ Static int showingsourcecode = 0;
 void setup_out()
 {
     end_source();
-    fprintf(outf, "/* From input file \"%s\" */\n", infname);
+    if (!nobanner)
+	fprintf(outf, "/* From input file \"%s\" */\n", infname);
     outf_lnum++;
     hdrlnum = 1;
     outindent = 0;

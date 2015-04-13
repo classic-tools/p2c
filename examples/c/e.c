@@ -9,15 +9,17 @@
 #define NPRINT          1000
 
 
-typedef uchar digitarray[NDIGITS + 1];
+typedef uchar digit;
+
+typedef digit digitarray[NDIGITS + 1];
 
 
-Static uchar *s, *x, *t;
+Static digit *s, *x, *t;
 Static long xs, ts, i;
 
 
 Static Void initinteger(x, n)
-uchar *x;
+digit *x;
 long n;
 {
   long i;
@@ -29,9 +31,9 @@ long n;
 
 
 Static Void divide(x, xs, n, y, ys)
-uchar *x;
+digit *x;
 long xs, n;
-uchar *y;
+digit *y;
 long *ys;
 {
   long i, c;
@@ -51,7 +53,7 @@ long *ys;
 
 
 Static Void add(s, x, xs)
-uchar *s, *x;
+digit *s, *x;
 long xs;
 {
   long i, c;
@@ -83,7 +85,7 @@ long xs;
 
 
 Static Void sub(s, x, xs)
-uchar *s, *x;
+digit *s, *x;
 long xs;
 {
   long i, c;
@@ -119,8 +121,8 @@ int argc;
 Char *argv[];
 {
   PASCAL_MAIN(argc, argv);
-  s = (uchar *)Malloc(sizeof(digitarray));
-  x = (uchar *)Malloc(sizeof(digitarray));
+  s = (digit *)Malloc(sizeof(digitarray));
+  x = (digit *)Malloc(sizeof(digitarray));
   initinteger(s, 0L);
   initinteger(x, 1L);
   xs = 0;
@@ -151,7 +153,7 @@ Char *argv[];
   for (i = NPRINT + 1; i <= NDIGITS; i++)
     printf("%d", s[i]);
   putchar('\n');
-  exit(0);
+  exit(EXIT_SUCCESS);
 
 /* p2c: dist/examples/e.p, line 123:
  * Note: Using % for possibly-negative arguments [317] */

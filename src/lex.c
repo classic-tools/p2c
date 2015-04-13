@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -58,6 +58,7 @@ Static struct inprec {
     Token curtok, saveblockkind;
     Symbol *curtoksym;
     Meaning *curtokmeaning;
+    char *curtokbuf, *curtokcase;
 } *topinput;
 
 
@@ -1050,6 +1051,8 @@ Static void push_input()
     inp->curtok = curtok;
     inp->curtoksym = curtoksym;
     inp->curtokmeaning = curtokmeaning;
+    inp->curtokbuf = stralloc(curtokbuf);
+    inp->curtokcase = stralloc(curtokcase);
     inp->saveblockkind = TOK_NIL;
     inp->next = topinput;
     topinput = inp;
@@ -1132,6 +1135,10 @@ void pop_input()
     curtok = inp->curtok;
     curtoksym = inp->curtoksym;
     curtokmeaning = inp->curtokmeaning;
+    strcpy(curtokbuf, inp->curtokbuf);
+    FREE(inp->curtokbuf);
+    strcpy(curtokcase, inp->curtokcase);
+    FREE(inp->curtokcase);
     strcpy(inbuf, inp->inbufptr);
     FREE(inp->inbufptr);
     inbufptr = inbuf;

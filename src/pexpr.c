@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -755,6 +755,15 @@ int firstarg, ismacro;
 	ex2 = p_expr(tp);
 	if (args->kind == MK_VARPARAM)
 	    tp = tp->basetype;
+	if (isfiletype(tp, 1) && is_std_file(ex2)) {
+	    mp2 = makestmttempvar(tp_bigtext, name_TEMP);
+	    ex2 = makeexpr_comma(
+		   makeexpr_comma(makeexpr_assign(filebasename(makeexpr_var(mp2)),
+						  ex2),
+				  makeexpr_assign(filenamepart(makeexpr_var(mp2)),
+						  makeexpr_string(""))),
+				 makeexpr_var(mp2));
+	}
 	tp2 = ex2->val.type;
 	isconf = ((tp->kind == TK_ARRAY ||
 		   tp->kind == TK_STRING) && tp->structdefd);
@@ -1099,6 +1108,18 @@ Type *target;
                 return makeexpr_un(EK_BNOT, tp_integer, ex);
             else
                 return makeexpr_not(ex);
+
+	case TOK_MINUS:
+	    gettok();
+            if (curtok == TOK_MININT) {
+                gettok();
+                return makeexpr_long(MININT);
+            } else
+		return makeexpr_neg(p_factor(target));
+	    
+        case TOK_PLUS:
+	    gettok();
+	    return p_factor(target);
 
         case TOK_ADDR:
             gettok();
@@ -2893,8 +2914,10 @@ int prec;
                         if (ex3->kind == EK_STRUCTCONST ||
                             ex2->kind == EK_STRUCTCONST)
                             output(",\n");
-                        else
+                        else if (spacecommas)
                             output(",\001 ");
+			else
+			    output(",\001");
                     }
                     if (ex2->kind == EK_STRUCTCONST) {
                         output("{ \005");
@@ -2916,6 +2939,8 @@ int prec;
 	    if ((sp && (sp->flags & WARNLIBR)) || mp->warnifused)
                 note(format_s("Called procedure %s [285]", mp->name));
             output(mp->name);
+	    if (spacefuncs)
+		output(" ");
             output("(\002");
 	    j = sp ? (sp->flags & FUNCBREAK) : 0;
 	    if (j == FALLBREAK)
@@ -2924,14 +2949,23 @@ int prec;
 		if ((j == FSPCARG1 && i == 1) ||
 		    (j == FSPCARG2 && i == 2) ||
 		    (j == FSPCARG3 && i == 3))
-		    output(",\011 ");
+		    if (spacecommas)
+			output(",\011 ");
+		    else
+			output(",\011");
                 else if (i > 0)
-                    output(",\002 ");
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 out_expr(ex->args[i]);
             }
             if (mp->ctx->kind == MK_FUNCTION && mp->ctx->varstructflag) {
                 if (i > 0)
-                    output(",\002 ");
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 out_ctx(mp->ctx, 1);
             }
             output(")");
@@ -2945,6 +2979,8 @@ int prec;
 	    if (sp && (sp->flags & WARNLIBR))
                 note(format_s("Called library procedure %s [286]", cp));
             output(cp);
+	    if (spacefuncs)
+		output(" ");
             output("(\002");
 	    j = sp ? (sp->flags & FUNCBREAK) : 0;
 	    if (j == FALLBREAK)
@@ -2953,9 +2989,15 @@ int prec;
 		if ((j == FSPCARG1 && i == 1) ||
 		    (j == FSPCARG2 && i == 2) ||
 		    (j == FSPCARG3 && i == 3))
-		    output(",\011 ");
+		    if (spacecommas)
+			output(",\011 ");
+		    else
+			output(",\011");
                 else if (i > 0)
-                    output(",\002 ");
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 out_expr(ex->args[i]);
             }
             output(")");
@@ -2969,10 +3011,15 @@ int prec;
                 output(")");
             } else
                 wrexpr(ex->args[0], subprec-1);
+	    if (spacefuncs)
+		output(" ");
             output("(\002");
             for (i = 1; i < ex->nargs; i++) {
                 if (i > 1)
-                    output(",\002 ");
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 out_expr(ex->args[i]);
             }
             output(")");
@@ -3454,7 +3501,8 @@ int prec;
             for (i = 0; i < ex->nargs-1; i++) {
                 wrexpr(ex->args[i], subprec);
                 output(",\002");
-                NICESPACE();
+		if (spacecommas)
+		    NICESPACE();
             }
             wrexpr(ex->args[ex->nargs-1], subprec);
             break;

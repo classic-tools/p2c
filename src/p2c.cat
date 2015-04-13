@@ -6,7 +6,7 @@
 
 
      NNNNAAAAMMMMEEEE
-          p2c - Pascal to C translator, version 1.17
+          p2c - Pascal to C translator, version 1.19
 
      SSSSYYYYNNNNOOOOPPPPSSSSIIIISSSS
           pppp2222cccc [ options ] [ file [ module ] ]
@@ -60,7 +60,7 @@
 
 
 
-                                   - 1 -      Formatted:  May 17, 1990
+                                   - 1 - Formatted:  February 28, 1991
 
 
 
@@ -126,7 +126,7 @@
 
 
 
-                                   - 2 -      Formatted:  May 17, 1990
+                                   - 2 - Formatted:  February 28, 1991
 
 
 
@@ -192,7 +192,7 @@
 
 
 
-                                   - 3 -      Formatted:  May 17, 1990
+                                   - 3 - Formatted:  February 28, 1991
 
 
 
@@ -258,7 +258,7 @@
 
 
 
-                                   - 4 -      Formatted:  May 17, 1990
+                                   - 4 - Formatted:  February 28, 1991
 
 
 
@@ -324,7 +324,7 @@
 
 
 
-                                   - 5 -      Formatted:  May 17, 1990
+                                   - 5 - Formatted:  February 28, 1991
 
 
 
@@ -390,7 +390,7 @@
 
 
 
-                                   - 6 -      Formatted:  May 17, 1990
+                                   - 6 - Formatted:  February 28, 1991
 
 
 
@@ -456,7 +456,7 @@
 
 
 
-                                   - 7 -      Formatted:  May 17, 1990
+                                   - 7 - Formatted:  February 28, 1991
 
 
 
@@ -522,7 +522,7 @@
 
 
 
-                                   - 8 -      Formatted:  May 17, 1990
+                                   - 8 - Formatted:  February 28, 1991
 
 
 
@@ -588,7 +588,7 @@
 
 
 
-                                   - 9 -      Formatted:  May 17, 1990
+                                   - 9 - Formatted:  February 28, 1991
 
 
 
@@ -654,7 +654,7 @@
 
 
 
-                                  - 10 -      Formatted:  May 17, 1990
+                                  - 10 - Formatted:  February 28, 1991
 
 
 
@@ -720,7 +720,7 @@
 
 
 
-                                  - 11 -      Formatted:  May 17, 1990
+                                  - 11 - Formatted:  February 28, 1991
 
 
 
@@ -786,7 +786,7 @@
 
 
 
-                                  - 12 -      Formatted:  May 17, 1990
+                                  - 12 - Formatted:  February 28, 1991
 
 
 
@@ -852,7 +852,7 @@
 
 
 
-                                  - 13 -      Formatted:  May 17, 1990
+                                  - 13 - Formatted:  February 28, 1991
 
 
 
@@ -918,7 +918,7 @@
 
 
 
-                                  - 14 -      Formatted:  May 17, 1990
+                                  - 14 - Formatted:  February 28, 1991
 
 
 
@@ -984,7 +984,7 @@
 
 
 
-                                  - 15 -      Formatted:  May 17, 1990
+                                  - 15 - Formatted:  February 28, 1991
 
 
 
@@ -1050,7 +1050,7 @@
 
 
 
-                                  - 16 -      Formatted:  May 17, 1990
+                                  - 16 - Formatted:  February 28, 1991
 
 
 
@@ -1116,7 +1116,7 @@
 
 
 
-                                  - 17 -      Formatted:  May 17, 1990
+                                  - 17 - Formatted:  February 28, 1991
 
 
 
@@ -1182,7 +1182,7 @@
 
 
 
-                                  - 18 -      Formatted:  May 17, 1990
+                                  - 18 - Formatted:  February 28, 1991
 
 
 
@@ -1248,7 +1248,7 @@
 
 
 
-                                  - 19 -      Formatted:  May 17, 1990
+                                  - 19 - Formatted:  February 28, 1991
 
 
 
@@ -1314,7 +1314,7 @@
 
 
 
-                                  - 20 -      Formatted:  May 17, 1990
+                                  - 20 - Formatted:  February 28, 1991
 
 
 
@@ -1380,7 +1380,7 @@
 
 
 
-                                  - 21 -      Formatted:  May 17, 1990
+                                  - 21 - Formatted:  February 28, 1991
 
 
 
@@ -1407,12 +1407,12 @@
           /usr/lib/libp2c.a      run-time library
 
      AAAAUUUUTTTTHHHHOOOORRRR
-          Dave Gillespie, daveg@csvax.caltech.edu.
+          Dave Gillespie, daveg@csvax.cs.caltech.edu.
 
           Many thanks to William Bader, Steven Levi, Rick Koshi, Eric
           Raymond, Magne Haveraaen, Dirk Grunwald, David Barto, Paul
-          Fisher, and others whose suggestions and bug reports have
-          helped improve _p_2_c in countless ways.
+          Fisher, Tom Schneider, and others whose suggestions and bug
+          reports have helped improve _p_2_c in countless ways.
 
 
 
@@ -1446,7 +1446,7 @@
 
 
 
-                                  - 22 -      Formatted:  May 17, 1990
+                                  - 22 - Formatted:  February 28, 1991
 
 
 

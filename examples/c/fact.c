@@ -27,7 +27,7 @@ Char *argv[];
   PASCAL_MAIN(argc, argv);
   for (i = 1; i <= 10; i++)
     printf("The factorial of %ld is %ld\n", i, fact(i));
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
 

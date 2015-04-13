@@ -1,7 +1,8 @@
 
 /* Run-time library for use with "p2c", the Pascal to C translator */
 
-/* "p2c"  Copyright (C) 1989 Dave Gillespie.
+/* "p2c"  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+ * By Dave Gillespie, daveg@csvax.cs.caltech.edu.  Version --VERSION--.
  * This file may be copied, modified, etc. in any way.  It is not restricted
  * by the licence agreement accompanying p2c itself.
  */
@@ -9,10 +10,6 @@
 
 
 #include "p2c.h"
-
-
-/* #define LACK_LABS     */   /* Define these if necessary */
-/* #define LACK_MEMMOVE  */
 
 
 #ifndef NO_TIME
@@ -59,31 +56,78 @@ char **argv;
 
 /* In case your system lacks these... */
 
-#ifdef LACK_LABS
-long labs(x)
+long my_labs(x)
 long x;
 {
     return((x > 0) ? x : -x);
 }
-#endif
 
 
-#ifdef LACK_MEMMOVE
-Anyptr memmove(d, s, n)
+#ifdef __STDC__
+Anyptr my_memmove(Anyptr d, Const Anyptr s, size_t n)
+#else
+Anyptr my_memmove(d, s, n)
 Anyptr d, s;
 register long n;
+#endif
 {
-    if (d < s || d - s >= n) {
-	memcpy(d, s, n);
-	return d;
+    register char *dd = (char *)d, *ss = (char *)s;
+    if (dd < ss || dd - ss >= n) {
+	memcpy(dd, ss, n);
     } else if (n > 0) {
-	register char *dd = d + n, *ss = s + n;
+	dd += n;
+	ss += n;
 	while (--n >= 0)
 	    *--dd = *--ss;
     }
     return d;
 }
+
+
+#ifdef __STDC__
+Anyptr my_memcpy(Anyptr d, Const Anyptr s, size_t n)
+#else
+Anyptr my_memcpy(d, s, n)
+Anyptr d, s;
+register long n;
 #endif
+{
+    register char *ss = (char *)s, *dd = (char *)d;
+    while (--n >= 0)
+	*dd++ = *ss++;
+    return d;
+}
+
+#ifdef __STDC__
+int my_memcmp(Const Anyptr s1, Const Anyptr s2, size_t n)
+#else
+int my_memcmp(s1, s2, n)
+Anyptr s1, s2;
+register long n;
+#endif
+{
+    register char *a = (char *)s1, *b = (char *)s2;
+    register int i;
+    while (--n >= 0)
+	if ((i = (*a++) - (*b++)) != 0)
+	    return i;
+    return 0;
+}
+
+#ifdef __STDC__
+Anyptr my_memset(Anyptr d, int c, size_t n)
+#else
+Anyptr my_memset(d, c, n)
+Anyptr d;
+register int c;
+register long n;
+#endif
+{
+    register char *dd = (char *)d;
+    while (--n >= 0)
+	*dd++ = c;
+    return d;
+}
 
 
 int my_toupper(c)
@@ -485,6 +529,7 @@ register int len;
     
     while (--len >= 0 && *fn && !isspace(*fn))
 	*cp++ = *fn++;
+    *cp = 0;
     return fnbuf;
 }
 
@@ -926,11 +971,11 @@ int code;
 	longjmp(jb->jbuf, 1);
     }
     if (code == 0)
-        exit(0);
+        exit(EXIT_SUCCESS);
     if (code == -1)
-        exit(1);
+        exit(EXIT_FAILURE);
     fprintf(stderr, "%s\n", _ShowEscape(buf, P_escapecode, P_ioresult, ""));
-    exit(1);
+    exit(EXIT_FAILURE);
 }
 
 int _EscIO(code)

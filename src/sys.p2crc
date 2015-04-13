@@ -1,5 +1,6 @@
-# Standard configuration file for "p2c" 1.18, the Pascal to C translator
-#  Copyright (C) 1989 David Gillespie.
+# Standard configuration file for "p2c" 1.19, the Pascal to C translator
+#  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+#  Author: Dave Gillespie.
 #  Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 # This program is free software; you can redistribute it and/or modify
@@ -532,6 +533,9 @@ For_AllOrNone                   # 1 or default=all-or-none breaking of the
 
 # COMMENTS AND BLANK LINES
 
+NoBanner	     		# 1=omit "From input file..." comment
+				# 0 or default=put this command at top of file
+
 EatComments                     # 1=don't copy any comments into C code
                                 # 2=don't copy comments inside procedures
                                 # 0 or default=keep all comments
@@ -623,6 +627,12 @@ ReturnParens                    # 1=write "return (x)"
 SpaceExprs                      # 1=use many spaces in expressions,
                                 # 0=use minimal spaces in expressions,
                                 # default=use nice spacing
+
+SpaceFuncs			# 1=write a space after function name in call
+				# 0 or default=no space: f(x)
+
+SpaceCommas			# 1 or default=one space after commas: f(x, y)
+				# 0=no space after commas: f(x,y)
 
 ImplicitZero                    # 1=generate "if (x)" rather than "if (x!=0)"
                                 # 0=always generate explicit comparisons
@@ -781,6 +791,19 @@ CompEnums                       # 1=okay to compare enums directly
                                 # 0=cast enums to ints for comparisons
                                 # default=0 unless AnsiC=1.
 
+PreserveTypes			# 1 or default=use typedef for all Pascal types
+				# 0=don't unnecessarily use typedef
+				# (Can be turned on/off for different decls)
+
+PreservePointers		# 1=override PreserveTypes for pointer types
+				# 0 or default=use in-line "*" notation
+				# -1=same as PreserveTypes
+
+PreserveStrings			# 1=override PreserveTypes for string types
+				# 2=use typedef for strings w/non-const lengths
+				# 0=use in-line "[]" notation for strings
+				# -1 or default=same as PreserveTypes
+
 Packing                         # 1 or default=fully packed records and arrays
                                 # 0=ignore "packed" keyword
                                 # 2=pack to bytes, but not bits
@@ -868,6 +891,11 @@ CastLongArgs                    # 1=include int/long argument casts if needed
 PromoteArgs                     # 1=promote e.g. short to int in prototypes
                                 # 0=do not promote in prototypes
                                 # default=only when prototyping forwards only
+
+FixPromotedArgs			# 1=attempt to handle "&" of promoted args
+				# 2=warn in this case but do not try to fix
+				# 0=leave promoted args alone
+				# default=1
 
 PromoteEnums			# 1=promote enum to int when promoting args
 				# 0=leave enums alone in prototypes
@@ -1487,7 +1515,7 @@ StoreBitsName                   # Name of a family of functions or macros
 DeclBufName        FILEBUF      # Name of a macro for declaring the file
 				# buffer for a file using GET and PUT.
 
-DeclBufNCName                   # Name of a DeclBufName-like macro with two
+DeclBufNCName      FILEBUFNC    # Name of a DeclBufName-like macro with two
                                 # arguments (no storage class), in case your
 				# compiler can't handle null macro arguments.
 

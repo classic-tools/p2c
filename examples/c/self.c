@@ -5,7 +5,12 @@
 #include <p2c/p2c.h>
 
 
-Static Char a[100][256];
+typedef Char s[256];
+
+typedef long n;
+
+
+Static s a[100];
 Static long i, j;
 
 
@@ -22,8 +27,8 @@ long a;
 Static Char *q(Result, a_)
 Char *Result, *a_;
 {
-  Char a[256];
-  long j;
+  s a;
+  n j;
   Char STR1[256];
 
   strcpy(a, a_);
@@ -64,7 +69,7 @@ Char *argv[];
   }
   for (i = 1; i <= 22; i++)
     puts(a[i - 1]);
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
 

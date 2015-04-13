@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -831,6 +831,7 @@ Meaning *mp;
     mp->xnext = NULL;
     mp->othername = NULL;
     mp->type = NULL;
+    mp->dtype = NULL;
     mp->needvarstruct = 0;
     mp->varstructflag = 0;
     mp->wasdeclared = 0;
@@ -939,11 +940,12 @@ enum meaningkind kind, namekind;
         name = curtokcase;
     else
         name = sym->name;
-    isdefine = (namekind == MK_CONST);
+    isdefine = (namekind == MK_CONST || (namekind == MK_VARIANT && !useenum));
     isglobal = (!curctx ||
 		curctx->kind != MK_FUNCTION ||
                 namekind == MK_FUNCTION ||
 		namekind == MK_TYPE ||
+		namekind == MK_VARIANT ||
                 isdefine) &&
                (curctx != nullctx);
     mp->refcount = isglobal ? 1 : 0;   /* make sure globals don't disappear */
@@ -1022,6 +1024,8 @@ enum meaningkind kind, namekind;
 
 	  case MK_VARIANT:   /* A true kludge! */
 	    editfmt = enumformat;
+	    if (!*editfmt)
+		editfmt = useenum ? varformat : constformat;
 	    break;
 
 	  default:
@@ -1297,8 +1301,11 @@ Type *type;
 int flags;
 {
     long smin, smax;
+    static Type typename;
 
     for (;;) {
+	if (type->preserved && (type->kind != TK_POINTER))
+	    return type;
         switch (type->kind) {
 
             case TK_POINTER:
@@ -1318,14 +1325,23 @@ int flags;
 		        if (stararrays == 1 ||
 			    !(flags & ODECL_FREEARRAY) ||
 			    type->basetype->structdefd) {
-			    type = type->basetype;
+			    type = type->basetype->basetype;
 			    flags &= ~ODECL_CHARSTAR;
+			    continue;
 			}
                         break;
 
 		    default:
 			break;
                 }
+		if (type->preserved)
+		    return type;
+		if (type->fbase && type->fbase->wasdeclared &&
+		    (flags & ODECL_DECL)) {
+		    typename.meaning = type->fbase;
+		    typename.preserved = 1;
+		    return &typename;
+		}
                 break;
 
             case TK_FUNCTION:
@@ -1341,6 +1357,12 @@ int flags;
                 if (type->meaning && type->meaning->kind == MK_TYPE &&
                     type->meaning->wasdeclared)
                     return type;
+		if (type->fbase && type->fbase->wasdeclared &&
+		    (flags & ODECL_DECL)) {
+		    typename.meaning = type->fbase;
+		    typename.preserved = 1;
+		    return &typename;
+		}
                 break;
 
             case TK_FILE:
@@ -1572,11 +1594,17 @@ int isheader, isforward;
     if (mp || staticlink) {
         if (usePP)
             output(" PP(");
+	else if (spacefuncs)
+	    output(" ");
         output("(");
         if (showtypes || shownames) {
             firstflag = 0;
             while (mp) {
-                if (firstflag++) output(",\002 ");
+                if (firstflag++)
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 name = (mp->othername && isheader) ? mp->othername : mp->name;
                 tp = (mp->othername) ? mp->rectype : mp->type;
                 if (!showtypes) {
@@ -1597,7 +1625,10 @@ int isheader, isforward;
                 if (isheader)
                     mp->wasdeclared = showtypes;
                 if (mp->type == tp_strptr && mp->anyvarflag) {     /* VAR STRING parameter */
-                    output(",\002 ");
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                     if (showtypes) {
 			if (useAnyptrMacros == 1 || useconsts == 2)
 			    output("Const ");
@@ -1614,7 +1645,11 @@ int isheader, isforward;
                 mp = mp->xnext;
             }
             if (staticlink) {     /* sub-procedure with static link */
-                if (firstflag++) output(",\002 ");
+                if (firstflag++)
+		    if (spacecommas)
+			output(",\002 ");
+		    else
+			output(",\002");
                 if (type->issigned) {
                     if (showtypes)
 			if (tp_special_anyptr)
@@ -1644,10 +1679,14 @@ int isheader, isforward;
     } else {
         if (usePP)
             output(" PV()");
-        else if (void_args)
-            output("(void)");
-        else
-            output("()");
+        else {
+	    if (spacefuncs)
+		output(" ");
+	    if (void_args)
+		output("(void)");
+	    else
+		output("()");
+	}
     }
 }
 
@@ -1661,13 +1700,14 @@ int flags;
     int i, depth, anyptrs, anyarrays;
     Expr *dimen[30];
     Expr *ex, *maxv;
-    Type *tp, *functype;
+    Type *tp, *functype, *basetype;
     Expr funcdummy;   /* yow */
 
     anyptrs = 0;
     anyarrays = 0;
     functype = NULL;
-    for (depth = 0, tp = type; tp; tp = tp->basetype) {
+    basetype = findbasetype(type, flags);
+    for (depth = 0, tp = type; tp && tp != basetype; tp = tp->basetype) {
         switch (tp->kind) {
 
             case TK_POINTER:
@@ -1702,6 +1742,9 @@ int flags;
                 }
                 dimen[depth++] = NULL;
                 anyptrs++;
+		if (tp->kind == TK_POINTER &&
+		    tp->fbase && tp->fbase->wasdeclared)
+		    break;
                 continue;
 
             case TK_ARRAY:
@@ -1720,6 +1763,8 @@ int flags;
                     ex = makeexpr_name("", tp_integer);
                 dimen[depth++] = ex;
 		anyarrays++;
+		if (tp->fbase && tp->fbase->wasdeclared)
+		    break;
                 continue;
 
             case TK_SET:
@@ -1794,6 +1839,8 @@ int flags;
 		if (functype)
 		    declare_args(functype, (flags & ODECL_HEADER) != 0,
 				           (flags & ODECL_FORWARD) != 0);
+		else if (spacefuncs)
+		    output(" ()");
 		else
 		    output("()");
             } else {
@@ -1881,7 +1928,7 @@ Type *t1, *t2;
 int similartypes(t1, t2)
 Type *t1, *t2;
 {
-    if (debug > 3) { fprintf(outf, "identicaltypes("); dumptypename(t1,1); fprintf(outf, ","); dumptypename(t2,1); fprintf(outf, ") = %d\n", identicaltypes(t1, t2)); }
+    if (debug > 3) { fprintf(outf, "similartypes("); dumptypename(t1,1); fprintf(outf, ","); dumptypename(t2,1); fprintf(outf, ") = %d\n", identicaltypes(t1, t2)); }
     if (identicaltypes(t1, t2))
 	return 1;
     t1 = canonicaltype(t1);
@@ -2034,10 +2081,16 @@ Meaning *mp;
     while (mp && mp->kind == MK_FIELD) {
 	flushcomments(&mp->comments, CMT_PRE, -1);
 	output(storageclassname(varstorageclass(mp) & 0x10));
-        outbasetype(mp->type, 0);
+	if (mp->dtype)
+	    output(mp->dtype->name);
+	else
+	    outbasetype(mp->type, 0);
         output(" \005");
 	for (;;) {
-	    outdeclarator(mp->type, mp->name, 0);
+	    if (mp->dtype)
+		output(mp->name);
+	    else
+		outdeclarator(mp->type, mp->name, 0);
 	    if (mp->val.i && (mp->type != tp_abyte || mp->val.i != 8))
 		output(format_d(" : %d", mp->val.i));
 	    if (isfiletype(mp->type, 0)) {
@@ -2046,11 +2099,15 @@ Meaning *mp;
 	    }
 	    mp->wasdeclared = 1;
 	    if (!mp->cnext || mp->cnext->kind != MK_FIELD ||
+		mp->dtype != mp->cnext->dtype ||
 		varstorageclass(mp) != varstorageclass(mp->cnext) ||
 		!mixable(mp, mp->cnext, 0, 0))
 		break;
             mp = mp->cnext;
-            output(",\001 ");
+	    if (spacecommas)
+		output(",\001 ");
+	    else
+		output(",\001");
         }
         output(";");
 	outtrailcomment(mp->comments, -1, declcommentindent);
@@ -2132,7 +2189,11 @@ int flags;
     Meaning *mp;
     int saveindent;
 
-    type = findbasetype(type, flags);
+    type = findbasetype(type, flags | ODECL_DECL);
+    if (type->preserved && type->meaning->wasdeclared) {
+	output(type->meaning->name);
+	return;
+    }
     switch (type->kind) {
 
         case TK_INTEGER:
@@ -2236,7 +2297,10 @@ int flags;
                             output(mp->name);
                             mp = mp->xnext;
                             if (mp)
-				output(",\001 ");
+				if (spacecommas)
+				    output(",\001 ");
+				else
+				    output(",\001");
                         }
                         outindent = saveindent;
                         output("\n}");
@@ -2382,11 +2446,17 @@ int which;    /* 0x1=header, 0x2=body, 0x4=trailer, 0x8=in varstruct */
         if (isstructconst)
             outsection(minorspace);
         output(storageclassname(isstatic));
-        outbasetype(mp->type, 0);
+	if (mp->dtype)
+	    output(mp->dtype->name);
+        else
+	    outbasetype(mp->type, 0);
         output(" \005");
     }
     if (which & 0x2) {
-        outdeclarator(mp->type, mp->name, 0);
+	if (mp->dtype)
+	    output(mp->name);
+	else
+	    outdeclarator(mp->type, mp->name, 0);
         if (mp->constdefn && blockkind != TOK_EXPORT &&
 	    (mp->kind == MK_VAR || mp->kind == MK_VARREF)) {
             if (mp->varstructflag) {    /* move init code into function body */
@@ -2501,11 +2571,15 @@ int invarstruct;
         while (mp) {
             if ((varkind(mp->kind) || checkvarmac(mp)) &&
 		!mp->wasdeclared &&
+		mp->dtype == mp0->dtype &&
                 varstorageclass(mp) == varstorageclass(mp0) &&
                 mp->varstructflag == invarstruct && mp->refcount > 0) {
                 if (mixable(mp2, mp, 0, 0) || first) {
                     if (!first)
-                        output(",\001 ");
+			if (spacecommas)
+			    output(",\001 ");
+			else
+			    output(",\001");
                     declarevar(mp, (first ? 0x3 : 0x2) |
 			           (invarstruct ? 0x8 : 0));
 		    mp2 = mp;
@@ -2581,7 +2655,10 @@ Type *ftype;
                     if (mp == mp0 ||
 			mixable(mp0, mp, 1, ODECL_CHARSTAR|ODECL_FREEARRAY)) {
                         if (mp != mp0)
-                            output(",\001 ");
+			    if (spacecommas)
+				output(",\001 ");
+			    else
+				output(",\001");
                         name = (mp->othername) ? mp->othername : mp->name;
                         tp = (mp->othername) ? mp->rectype : mp->type;
                         outdeclarator(tp, name,
@@ -2606,8 +2683,10 @@ Type *ftype;
                 if (mp != mp0) {
                     if (mixvars == 0)
                         output(";\nint ");
-                    else
+                    else if (spacecommas)
                         output(",\001 ");
+		    else
+                        output(",\001");
                 }
                 output(format_s(name_STRMAX, mp->name));
             }
@@ -2681,6 +2760,7 @@ enum typekind kind;
     tp->issigned = 0;
     tp->dumped = 0;
     tp->structdefd = 0;
+    tp->preserved = 0;
     return tp;
 }
 
@@ -3003,7 +3083,7 @@ Meaning **flast;
 int ispacked;
 Meaning *tname;
 {
-    Meaning *firstm, *lastm, *veryfirstm;
+    Meaning *firstm, *lastm, *veryfirstm, *dtype;
     Symbol *sym;
     Type *type, *tp2;
     long li1, li2;
@@ -3041,11 +3121,14 @@ Meaning *tname;
 		volatileflag = 1;
 		strlist_delete(&attrlist, l1);
 	    }
+	    dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
 	    type = p_type(firstm);
 	    decl_comments(lastm);
 	    fielddecl(firstm, &type, &tp2, &li1, ispacked, &aligned);
+	    dtype = validatedtype(dtype, type);
 	    for (;;) {
 		firstm->type = tp2;
+		firstm->dtype = dtype;
 		firstm->val.type = type;
 		firstm->val.i = li1;
 		firstm->constqual = constflag;
@@ -3253,8 +3336,11 @@ Meaning ***confp;
 	    (curtok == TOK_ARRAY || curtok == TOK_PACKED ||
 	     curtok == TOK_VARYING)) {
 	    tp->basetype = p_conformant_array(tname, confp);
-	} else
+	} else {
+	    tp->fbase = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
 	    tp->basetype = p_type(NULL);
+	    tp->fbase = validatedtype(tp->fbase, tp->basetype);
+	}
         if (!ispacked)
             return tp;
         size = 0;
@@ -3718,7 +3804,9 @@ Meaning *tname;
 		anydeferredptrs = 1;
                 gettok();
             } else {
+		tp->fbase = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
                 tp->basetype = p_type(NULL);
+		tp->fbase = validatedtype(tp->fbase, tp->basetype);
                 if (!tp->basetype->pointertype)
                     tp->basetype->pointertype = tp;
             }
@@ -3738,9 +3826,7 @@ Meaning *tname;
 		    break;
 		}
                 sl = strlist_find(constmacros, curtoksym->name);
-                mp = addmeaningas(curtoksym, MK_CONST,
-				  (*enumformat) ? MK_VARIANT :
-                                  (useenum) ? MK_VAR : MK_CONST);
+                mp = addmeaningas(curtoksym, MK_CONST, MK_VARIANT);
                 mp->val.type = tp;
                 mp->val.i = num++;
                 mp->type = tp;
@@ -4699,6 +4785,7 @@ Meaning *mp;
 			    mp2 = mp2->snext;
 			if (mp2 && mp2->kind == MK_TYPE) {
 			    pd->tp->basetype = mp2->type;
+			    pd->tp->fbase = mp2;
 			    if (!mp2->type->pointertype)
 				mp2->type->pointertype = pd->tp;
 			}
@@ -4716,7 +4803,7 @@ Meaning *mp;
 void declaretype(mp)
 Meaning *mp;
 {
-    int saveindent;
+    int saveindent, pres;
 
     switch (mp->type->kind) {
 	
@@ -4782,6 +4869,24 @@ Meaning *mp;
 	break;
 	
       default:
+	pres = preservetypes;
+	if (mp->type->kind == TK_POINTER && preservepointers >= 0)
+	    pres = preservepointers;
+	if (mp->type->kind == TK_STRING && preservestrings >= 0)
+	    if (preservestrings == 2)
+		pres = mp->type->indextype->smax->kind != EK_CONST;
+	    else
+		pres = preservestrings;
+	if (pres) {
+	    output("typedef ");
+	    mp->type->preserved = 0;
+	    outbasetype(mp->type, 0);
+	    output(" ");
+	    outdeclarator(mp->type, mp->name, 0);
+	    output(";\n");
+	    mp->type->preserved = 1;
+	    outtrailcomment(mp->comments, -1, declcommentindent);
+	}
 	break;
     }
     mp->wasdeclared = 1;
@@ -4860,6 +4965,7 @@ void p_typedecl()
 		warning(format_s("Unsatisfied forward reference to type %s [138]", pd->sym->name));
 	    } else {
 		pd->tp->basetype = mp->type;
+		pd->tp->fbase = mp;
 		if (!mp->type->pointertype)
 		    mp->type->pointertype = pd->tp;
 	    }
@@ -4989,10 +5095,22 @@ Meaning *mp;
 
 
 
+Meaning *validatedtype(dtype, type)
+Meaning *dtype;
+Type *type;
+{
+    if (dtype &&
+	(!type->preserved || !type->meaning ||
+	 dtype->kind != MK_TYPE || dtype->type != type ||
+	 type->meaning == dtype))
+	return NULL;
+    return dtype;
+}
+
 
 void p_vardecl()
 {
-    Meaning *firstmp, *lastmp;
+    Meaning *firstmp, *lastmp, *dtype;
     Type *tp;
     int aliasflag, volatileflag, constflag, staticflag, globalflag, externflag;
     Strlist *l1;
@@ -5062,6 +5180,7 @@ void p_vardecl()
 	    if (l1->s[0] != 'W')
 		strlist_delete(&attrlist, l1);
 	}
+	dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
         tp = p_type(firstmp);
 	decl_comments(lastmp);
         handleabsolute(lastmp, (lastmp->kind != MK_VAR));
@@ -5075,6 +5194,7 @@ void p_vardecl()
 		note("Initializer ignored for variable with VarMacro [115]");
 	    }
 	}
+	dtype = validatedtype(dtype, tp);
         for (;;) {
             if (firstmp->kind == MK_VARREF) {
                 firstmp->type = makepointertype(tp);
@@ -5089,6 +5209,7 @@ void p_vardecl()
 			firstmp->constdefn = copyexpr(initexpr);
 		}
             }
+	    firstmp->dtype = dtype;
 	    firstmp->volatilequal = volatileflag;
 	    firstmp->constqual = constflag;
 	    firstmp->isforward |= staticflag;

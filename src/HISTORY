@@ -4,6 +4,65 @@ Summary of changes to "p2c"
 ------- -- ------- --  ---
 
 
+Version 1.19:
+
+ * P2c's copyright has been assigned to the Free Software Foundation.
+
+ * Improved p2c to preserve Pascal type names in most cases.
+
+ * Introduced "PreserveTypes" (PreserveTypes=0 makes p2c work like v1.18).
+
+ * Also added "PreservePointers" (default off) and "PreserveStrings" (on).
+
+ * Changed p2c.h to recognize funny ANSI-like header files in HP-UX 7.0.
+
+ * Changed to handle taking the address of an argument of a promotable type.
+
+ * Changed parser to accept "a * -b" without syntax errors.
+
+ * Fixed a few unreachable statement warnings in the p2c sources.
+
+ * Changed exit(0) to exit(EXIT_SUCCESS) in main program.
+
+ * Added support for VAX C and MSDOS to p2c.h.
+
+ * Bug fix in parse.c:fixblock: Call filebasetype in similartypes arg.
+   Symptom: Pascal GET procedure sometimes crashed p2c when StructFiles=1.
+
+ * Bug fix in pexpr.c:p_funcarglist: Handle stdin/stdout when StructFiles=1.
+   Symptom: myproc(output) generated "type mismatch" warning and bad code.
+
+ * Bug fix in expr.c:makeexpr_rel: Use ISCONST to guard checkconst call.
+   Symptom: "J <= A-I-1+C" where "const C=1" put p2c into an infinite loop.
+
+ * Bug fix in decl.c:setupmeaning: Consider enum consts to be global names.
+   Symptom: Local enum consts can conflict with similar global names.
+
+ * Bug fix in lex.c:push_input/pop_input: Save/restore curtokbuf/curtokcase.
+   Symptom: Value lost when main calls defmacro after setup_lex, before parser.
+
+ * Bug fix in parse.c:out_function: Don't recursively output "exported" funcs.
+   Symptom: This occurs when an "external" decl occurs local to a function.
+
+ * Bug fix in p2c.h:AGETFBUF: Removed extra "&".
+   Symptom: Taking address of an array generated a warning on some compilers.
+
+ * Bug fix in p2c.h:LONG_MAX, etc.: Fixed to cast back to signed types.
+   Symptom: LONG_MAX had type unsigned long; "(double)(-LONG_MAX)" failed.
+
+ * Bug fix in p2clib.c:P_trimname: Added trailing null to output string.
+   Symptom: Function wouldn't always work after first call.
+
+ * Added to sys.p2crc/trans.h the following configuration parameter:
+
+    FixPromotedArgs    Fix "&" of arguments which may be promoted.
+    PreserveTypes      Use typedef to preserve most Pascal type names.
+    PreservePointers   Use typedef specifically for pointer types.
+    PreserveStrings    Use typedef specifically for string types.
+    SpaceCommas	       Use spaces after commas (default on).
+    SpaceFuncs	       Use spaces after function names (default off).
+    NoBanner	       Suppress "From input file..." comment at top of file.
+
 Version 1.18:
 
  * Improved indentation strategy for EMBED comments.

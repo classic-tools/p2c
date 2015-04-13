@@ -1,5 +1,5 @@
 
-/* "makeproto"  Copyright 1989  Dave Gillespie */
+/* "makeproto"  Copyright 1989, 1990, 1991 Free Software Foundation */
 
 
 /* Program to scan old-style source files and make prototypes */

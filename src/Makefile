@@ -1,5 +1,6 @@
 # Makefile for "p2c", the Pascal to C translator.
-#  Copyright (C) 1989 David Gillespie.
+#  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+#  Author: Dave Gillespie.
 #  Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 # This program is free software; you can redistribute it and/or modify

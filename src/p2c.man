@@ -1,7 +1,7 @@
-.\" p2c  Copyright 1989 Dave Gillespie
+.\" p2c  Copyright 1989, 1990, 1991 Free Software Foundation
 .TH P2C 1 "local"
 .SH NAME
-p2c \- Pascal to C translator, version 1.18
+p2c \- Pascal to C translator, version 1.19
 .SH SYNOPSIS
 .B p2c
 [ options ] [ file [ module ] ]
@@ -1527,10 +1527,10 @@ p2crc	local configuration file
 .br
 --LIBDIR--/libp2c.a	run-time library
 .SH AUTHOR
-Dave Gillespie, daveg@csvax.caltech.edu.
+Dave Gillespie, daveg@csvax.cs.caltech.edu.
 .PP
 Many thanks to William Bader, Steven Levi, Rick Koshi, Eric Raymond,
-Magne Haveraaen, Dirk Grunwald, David Barto, Paul Fisher, and others whose
-suggestions and bug reports have helped improve
+Magne Haveraaen, Dirk Grunwald, David Barto, Paul Fisher, Tom Schneider,
+and others whose suggestions and bug reports have helped improve
 .I p2c
 in countless ways.

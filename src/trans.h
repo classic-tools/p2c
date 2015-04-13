@@ -1,5 +1,6 @@
-/* "p2c", a Pascal to C translator, version 1.18.
-   Copyright (C) 1989 David Gillespie.
+/* "p2c", a Pascal to C translator, version 1.19.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+   Author: Dave Gillespie.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -77,7 +78,7 @@ the Free Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 
 
-#ifdef BSD
+#if defined(BSD) && !defined(__STDC__)
 # include <strings.h>
 # define memcpy(a,b,n) bcopy(b,a,n)
 # define memcmp(a,b,n) bcmp(a,b,n)
@@ -134,7 +135,7 @@ char *p2c_home = P2C_HOME;
 extern char *p2c_home;
 #endif
 
-#define P2C_VERSION  "1.18"
+#define P2C_VERSION  "1.19"
 
 
 
@@ -454,6 +455,7 @@ typedef struct S_meaning {
     struct S_meaning *cbase;   /* First meaning in this context */
     struct S_meaning *ctx;     /* Context of this meaning */
     struct S_meaning *xnext;   /* (above) */
+    struct S_meaning *dtype;   /* Declared type name, if any */
     struct S_symbol *sym;      /* Symbol of which this is a meaning */
     struct S_type *type;       /* (above) */
     struct S_type *rectype;    /* (above) */
@@ -531,6 +533,7 @@ typedef struct S_meaning {
  * TK_POINTER:  Pointer type.
  *    tp->basetype => Base type of pointer.
  *    tp->smin => EK_NAME for type if not-yet-resolved forward; else NULL.
+ *    tp->fbase => Actual type name for tp->basetype, or NULL.
  *    Only one pointer type is ever generated for a given other type;
  *    each tp->pointertype points back to that type if it has been generated.
  *
@@ -549,6 +552,7 @@ typedef struct S_meaning {
  *    tp->smin => Integer constant if SkipIndices was used, else NULL.
  *    tp->smax = NULL.
  *    tp->structdefd = 1 if type is for a conformant array parameter.
+ *    tp->fbase => Actual type name for tp->basetype, or NULL.
  *
  * TK_ARRAY with smax != NULL:  Large packed array type.
  *    tp->basetype => Element type of C array (tp_ubyte/tp_sbyte/tp_sshort).
@@ -558,6 +562,7 @@ typedef struct S_meaning {
  *    tp->escale = log-base-two of number of bits per packed element, else 0.
  *    tp->issigned = 1 if packed array elements are signed, 0 if unsigned.
  *    tp->structdefd = 1 if type is for a conformant array parameter.
+ *    tp->fbase => Actual type name for tp->basetype, or NULL.
  *
  * TK_SMALLARRAY:  Packed array fitting within a single integer.
  *    (Same as for packed TK_ARRAY.)
@@ -629,7 +634,8 @@ typedef struct S_type {
     struct S_expr *smax;       /* (above) */
     unsigned issigned:1,       /* (above) */
              dumped:1,         /* Has been dumped (for debugging) */
-             structdefd:1;     /* (above) */
+             structdefd:1,     /* (above) */
+             preserved:1;      /* Declared with preservetypes = 1 */
     short escale;              /* (above) */
 } Type;
 
@@ -927,6 +933,7 @@ typedef struct S_stmt {
 #define ODECL_FUNCTION      0x4
 #define ODECL_HEADER        0x8
 #define ODECL_FORWARD       0x10
+#define ODECL_DECL	    0x20
 
 
 /* Flags for fixexpr(): */
@@ -995,7 +1002,7 @@ extern enum {
 } which_lang;
 
 extern short debug, tokentrace, quietmode, cmtdebug, copysource;
-extern int showprogress, maxerrors;
+extern int nobanner, showprogress, maxerrors;
 extern short hpux_lang, integer16, doublereals, pascalenumsize;
 extern short needsignedbyte, unsignedchar, importall;
 extern short nestedcomments, pascalsignif, pascalcasesens;
@@ -1086,7 +1093,7 @@ extern short breakbeforedot, breakbeforeassign;
 extern short for_allornone;
 extern short extraparens, breakparens, returnparens;
 extern short variablearrays, stararrays;
-extern short spaceexprs, implicitzero, starindex;
+extern short spaceexprs, spacefuncs, spacecommas, implicitzero, starindex;
 extern int casetabs;
 extern short starfunctions, mixfields, alloczeronil, postincrement;
 extern short mixvars, mixtypes, mixinits, nullcharconst, castnull, addindex;
@@ -1108,7 +1115,8 @@ extern short squeezesubr, useenum, enumbyte, packing, packsigned, keepnulls;
 extern short compenums, formatstrings, alwayscopyvalues;
 extern short use_static, var_static, void_args, prototypes, fullprototyping;
 extern short procptrprototypes, promote_enums;
-extern short castargs, castlongargs, promoteargs;
+extern short preservetypes, preservepointers, preservestrings;
+extern short castargs, castlongargs, promoteargs, fixpromotedargs;
 extern short varstrings, varfiles, copystructfuncs;
 extern long skipindices;
 extern short stringleaders;
@@ -1294,6 +1302,7 @@ struct rcstruct {
     'S', 'V', "FOR_ALLORNONE",   (anyptr) &for_allornone,     1,
 
 /* COMMENTS AND BLANK LINES */
+    'S', 'V', "NOBANNER",        (anyptr) &nobanner,	      0,
     'S', 'V', "EATCOMMENTS",     (anyptr) &eatcomments,       0,
     'S', 'V', "SPITCOMMENTS",    (anyptr) &spitcomments,      0,
     'S', 'V', "SPITORPHANCOMMENTS",(anyptr)&spitorphancomments, 0,
@@ -1320,6 +1329,8 @@ struct rcstruct {
     'S', 'V', "BREAKADDPARENS",  (anyptr) &breakparens,      -1,
     'S', 'V', "RETURNPARENS",    (anyptr) &returnparens,     -1,
     'S', 'V', "SPACEEXPRS",      (anyptr) &spaceexprs,       -1,
+    'S', 'V', "SPACEFUNCS",	 (anyptr) &spacefuncs,	      0,
+    'S', 'V', "SPACECOMMAS",	 (anyptr) &spacecommas,	      1,
     'S', 'V', "IMPLICITZERO",    (anyptr) &implicitzero,     -1,
     'S', 'V', "STARINDEX",       (anyptr) &starindex,        -1,
     'S', 'V', "ADDINDEX",        (anyptr) &addindex,         -1,
@@ -1434,6 +1445,9 @@ struct rcstruct {
     'S', 'T', "USEENUM",         (anyptr) &useenum,          -1,
     'S', 'V', "SQUEEZEENUM",     (anyptr) &enumbyte,         -1,
     'S', 'V', "COMPENUMS",       (anyptr) &compenums,        -1,
+    'S', 'V', "PRESERVETYPES",   (anyptr) &preservetypes,     1,
+    'S', 'V', "PRESERVEPOINTERS",(anyptr) &preservepointers,  0,
+    'S', 'V', "PRESERVESTRINGS", (anyptr) &preservestrings,  -1,
     'S', 'V', "PACKING",         (anyptr) &packing,           1,
     'S', 'V', "PACKSIGNED",      (anyptr) &packsigned,        1,
     'I', 'V', "STRINGCEILING",   (anyptr) &stringceiling,   255,
@@ -1452,6 +1466,7 @@ struct rcstruct {
     'S', 'V', "CASTARGS",        (anyptr) &castargs,         -1,
     'S', 'V', "CASTLONGARGS",    (anyptr) &castlongargs,     -1,
     'S', 'V', "PROMOTEARGS",     (anyptr) &promoteargs,      -1,
+    'S', 'V', "FIXPROMOTEDARGS", (anyptr) &fixpromotedargs,   1,
     'S', 'V', "PROMOTEENUMS",    (anyptr) &promote_enums,    -1,
     'S', 'V', "STATICLINKS",     (anyptr) &hasstaticlinks,   -1,
     'S', 'V', "VARSTRINGS",      (anyptr) &varstrings,        0,
@@ -1825,14 +1840,22 @@ int unlink         PP( (char *) );
 #ifdef toupper
 # undef toupper
 # undef tolower
-# ifdef _toupper
-#  undef _toupper
-#  undef _tolower
+# define toupper(c)   my_toupper(c)
+# define tolower(c)   my_tolower(c)
+#endif
+
+#ifndef _toupper
+# if 'A' == 65 && 'a' == 97
+#  define _toupper(c)  ((c)-'a'+'A')
+#  define _tolower(c)  ((c)-'A'+'a')
+# else
+#  ifdef toupper
+#   undef toupper   /* hope these are shadowing real functions, */
+#   undef tolower   /* because my_toupper calls _toupper! */
+#  endif
+#  define _toupper(c)  toupper(c)
+#  define _tolower(c)  tolower(c)
 # endif
-# define toupper(c)  my_toupper(c)
-# define tolower(c)  my_tolower(c)
-# define _toupper(c)  ((c)-'a'+'A')
-# define _tolower(c)  ((c)-'A'+'a')
 #endif
 
 

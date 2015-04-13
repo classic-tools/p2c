@@ -1,5 +1,5 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989 David Gillespie.
+   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
    Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
 
 This program is free software; you can redistribute it and/or modify
@@ -3031,6 +3031,7 @@ Expr *a, *b;
                 continue;
             }
             if (b->kind == EK_PLUS && sign &&
+	         ISCONST(b->args[b->nargs-1]->kind) &&
                  checkconst(b->args[b->nargs-1], sign)) {
                 b = makeexpr_plus(b, makeexpr_long(-sign));
                 switch (rel) {
@@ -3537,6 +3538,7 @@ Expr *a;
 {
     Expr *ex;
     Type *type;
+    Meaning *mp;
 
     a = un_sign_extend(a);
     type = makepointertype(a->val.type);
@@ -3594,8 +3596,20 @@ Expr *a;
 		return makeexpr_actcast(makeexpr_addr(grabarg(a, 0)), type);
 	    else if (a->kind == EK_CAST)
 		return makeexpr_cast(makeexpr_addr(grabarg(a, 0)), type);
-	    else
+	    else {
+		if (a->kind == EK_VAR &&
+		    (mp = (Meaning *)a->val.i)->kind == MK_PARAM &&
+		    mp->type != promote_type(mp->type) &&
+		    fixpromotedargs) {
+		    note(format_s("Taking & of possibly promoted param %s [324]",
+				  mp->name));
+		    if (fixpromotedargs == 1) {
+			mp->varstructflag = 1;
+			mp->ctx->varstructflag = 1;
+		    }
+		}
 		return makeexpr_un(EK_ADDR, type, a);
+	    }
 	}
     }
 }
@@ -3619,10 +3633,7 @@ Expr *a;
     Meaning *mp, *tvar;
 
     mp = (Meaning *)a->val.i;
-    if ((a->kind == EK_VAR &&
-         (mp == mp_input || mp == mp_output)) ||
-        (a->kind == EK_NAME &&
-         !strcmp(a->val.s, "stderr"))) {
+    if (is_std_file(a)) {
         if (addrstdfiles == 0) {
             note(format_s("Taking address of %s; consider setting VarFiles = 0 [144]",
                           (a->kind == EK_VAR) ? ((Meaning *)a->val.i)->name
@@ -3728,7 +3739,6 @@ int incskipped;
                                                              makeexpr_setbits()),
                                                 makeexpr_long(2)),
                                   makeexpr_sizeof(makeexpr_type(tp_integer), 0));
-            break;
 
 	default:
 	    break;
