@@ -1,5 +1,5 @@
-/* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/self.p" */
+/* Output from p2c --VERSION--, the Pascal-to-C translator */
+/* From input file "examples/self.p" */
 
 
 #include <p2c/p2c.h>
@@ -64,11 +64,11 @@ Char *argv[];
   strcpy(a[20], "   for i := 1 to 22 do writeln(a[i]);");
   strcpy(a[21], "end.");
   for (i = 1; i <= 11; i++) {
-    sprintf(a[i + 5], "   a[%ld] := '%s';", t(i), q(STR2, a[t(i) - 1]));
-    j = strlen(a[i + 5]) + 1;
+    sprintf(a[i+5], "   a[%ld] := '%s';", t(i), q(STR2, a[t(i) - 1]));
+    j = strlen(a[i+5]) + 1;
   }
   for (i = 1; i <= 22; i++)
-    puts(a[i - 1]);
+    puts(a[i-1]);
   exit(EXIT_SUCCESS);
 }
 

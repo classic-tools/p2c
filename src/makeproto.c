@@ -1,5 +1,5 @@
 
-/* "makeproto"  Copyright 1989, 1990, 1991 Free Software Foundation */
+/* "makeproto"  Copyright 1989, 1990, 1991, 1992, 1993 Free Software Foundation */
 
 
 /* Program to scan old-style source files and make prototypes */
@@ -10,11 +10,22 @@
 #include <ctype.h>
 #include <time.h>
 
+#ifdef M_XENIX
+# define BSD 0
+#endif
+
 #ifdef FILE       /* a #define in BSD, a typedef in SYSV (hp-ux, at least) */
 # ifndef BSD
 #  define BSD 1
 # endif
 #endif
+
+#ifdef BSD
+# if !BSD
+#  undef BSD
+# endif
+#endif
+
 
 #ifdef BSD
 # include <strings.h>
@@ -135,7 +146,7 @@ void usage()
 
 
 
-main(argc, argv)
+int main(argc, argv)
 int argc;
 char **argv;
 {
@@ -418,7 +429,7 @@ char **argv;
                                               argdecls[i] + strlen(warntypes[j].bad));
                         strcpy(argdecls[i], temp);
                         fprintf(stderr, "Warning: Argument %s of %s has type %s\n",
-                                        argnames[i], fname, warntypes[j]);
+                                        argnames[i], fname, warntypes[j].bad);
                     }
                 }
             }

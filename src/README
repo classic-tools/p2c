@@ -1,12 +1,13 @@
 
 This directory contains "p2c", a Pascal to C translator.
 
-"p2c"  Copyright 1989, 1990, 1991  Free Software Foundation, Inc.
+"p2c"  Copyright 1989, 1990, 1991, 1992, 1993  Free Software Foundation, Inc.
 
 Written and maintained by:   Dave Gillespie
-			     256-80 Caltech
-			     Pasadena CA 91125
-			     daveg@csvax.cs.caltech.edu, cit-vax!daveg
+			     c/o Synaptics, Inc.
+			     2698 Orchard Parkway
+			     San Jose CA 95134
+			     daveg@synaptics.com, uunet!synaptx!daveg
 
 
 This program is distributed under the terms of the GNU License Agreement.
@@ -48,6 +49,7 @@ written to support these functions.
 
 The file "NOTES" contains the author's current bugs-and-plans list.
 The file "HISTORY" contains the revision history of the program.
+(NOTES is a bit out of date, but HISTORY is actively maintained.)
 
 The "makeproto" program is an independent utility for scanning a large
 C program with old-style declarations and building function prototypes
@@ -65,6 +67,6 @@ NO WARRANTY:
    to be extended (see funcs.c, hpmods.c and citmods.c for examples), but
    some of the main code is pretty messy since the translator has grown
    considerably beyond its original planned scale.  Bug reports are
-   welcome at daveg@csvax.caltech.edu, but I may not have time to respond
+   welcome at daveg@synaptics.com, but I may not have time to respond
    to them immediately.  Suggestions are welcome, too!
 

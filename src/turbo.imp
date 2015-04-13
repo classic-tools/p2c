@@ -128,15 +128,39 @@ unit crt;
 
 interface
 
+{FuncMacro KeyPressed=kbhit()}
+{FuncMacro Readkey=getch()}
 
 function KeyPressed : boolean;
 function ReadKey : char;
 
-procedure ClrScr;
-procedure TextBackground(i : integer);
-procedure Window(a, b, c, d : integer);
+procedure clrscr;
+procedure clreol;
+procedure delay(ms : word);
+procedure textbackground(i : integer);
+procedure textcolor(Color : byte);
+procedure window(a, b, c, d : integer);
+
+const	BLACK		= 0;
+	BLUE		= 1;
+	GREEN		= 2;
+	CYAN		= 3;
+	RED		= 4;
+	MAGENTA		= 5;
+	BROWN		= 6;
+	LIGHTGRAY	= 7;
+	DARKGRAY	= 8;
+	LIGHTBLUE	= 9;
+	LIGHTGREEN	= 10;
+	LIGHTCYAN	= 11;
+	LIGHTRED	= 12;
+	LIGHTMAGENTA	= 13;
+	YELLOW		= 14;
+	WHITE		= 15;
+	BLINK		= 128;
 
 var wherex, wherey : integer;
+    TextAttr : byte;
 
 end;
 

@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -62,13 +62,13 @@ typedef struct S_paren {
    \012  \n  (newline)
    \013  \E  Preceding break has extra penalty
    \014  \f  (form-feed)
-   \015  \H  Hang-indent the preceding operator
-   \016  \.  (unused)
+   \015  \r  (return)
+   \016  \H  Hang-indent the preceding operator
    \017  \C  Break point for last : of a ?: construct
 
 */
 
-char spchars[] = ".BX()TFA[SnEfH.C................";
+char spchars[] = ".BX()TFA[SnEfrHC................";
 
 
 
@@ -97,8 +97,8 @@ Static Paren *parenlist;
 Static long numalts, bestnumalts;
 Static int randombreaks;
 
-Static char *outbuf;
-Static int outbufpos, outbufcount, outbufsize;
+Static char *outbuf, *outfilebuf, *outfilebufptr, *outfilebufend;
+Static int outbufpos, outbufcount, outbufsize, outfilebufsize;
 Static int suppressnewline, lastlinelength;
 Static int eatblanks;
 Static int embeddedcode;
@@ -112,7 +112,10 @@ void setup_out()
 {
     end_source();
     if (!nobanner)
-	fprintf(outf, "/* From input file \"%s\" */\n", infname);
+	if (slashslash)
+	    fprintf(outf, "// From input file \"%s\"\n", infname);
+	else
+	    fprintf(outf, "/* From input file \"%s\" */\n", infname);
     outf_lnum++;
     hdrlnum = 1;
     outindent = 0;
@@ -130,7 +133,55 @@ void setup_out()
     outbuf = ALLOC(outbufsize, char, misc);
     outbufpos = 0;
     outbufcount = 0;
+    outfilebufsize = 10;
+    outfilebuf = ALLOC(outfilebufsize, char, misc);
+    outfilebufptr = outfilebuf;
+    outfilebufend = outfilebuf + outfilebufsize/2;
     srand(17);
+}
+
+
+
+int grow_outfilebuf()
+{
+    int pos = outfilebufptr - outfilebuf;
+    outfilebufsize *= 2;
+    outfilebuf = REALLOC(outfilebuf, outfilebufsize, char);
+    outfilebufptr = outfilebuf + pos;
+    outfilebufend = outfilebuf + outfilebufsize/2;
+    return 1;
+}
+
+
+void flush_outfilebuf()
+{
+    if (outfilebufptr > outfilebuf) {
+	*outfilebufptr = 0;
+	replacestrings(outfilebuf, replaceafter);
+	fputs(outfilebuf, outf);
+	outfilebufptr = outfilebuf;
+    }
+}
+
+
+#define putc_outf(ch) ( \
+    (outfilebufptr == outfilebufend) ? grow_outfilebuf() : 0, \
+    *outfilebufptr++ = (ch) \
+)
+
+
+void puts_outf(s)
+char *s;
+{
+    int len = strlen(s);
+    if (len > 0) {
+	while (outfilebufptr + len > outfilebufend)
+	    grow_outfilebuf();
+	strcpy(outfilebufptr, s);
+	outfilebufptr += len;
+	if (outfilebufptr[-1] == '\n')
+	    flush_outfilebuf();
+    }
 }
 
 
@@ -138,6 +189,7 @@ void setup_out()
 void select_outfile(fp)
 FILE *fp;
 {
+    flush_outfilebuf();
     if (outf == codef) {
         codesectsize = sectionsize;
 	codelnum = outf_lnum;
@@ -160,7 +212,7 @@ FILE *fp;
 void start_source()
 {
     if (!showingsourcecode) {
-	fprintf(outf, "\n#ifdef Pascal\n");
+	puts_outf("\n#ifdef Pascal\n");
 	showingsourcecode = 1;
     }
 }
@@ -168,7 +220,7 @@ void start_source()
 void end_source()
 {
     if (showingsourcecode) {
-	fprintf(outf, "#endif /*Pascal*/\n\n");
+	puts_outf("#endif /*Pascal*/\n\n");
 	showingsourcecode = 0;
     }
 }
@@ -286,12 +338,12 @@ int col;
 	return;    /* something wrong happened! */
     if (phystabsize > 0) {
 	while (col >= phystabsize) {
-	    putc('\t', outf);
+	    putc_outf('\t');
 	    col -= phystabsize;
 	}
     }
     while (col > 0) {
-	putc(' ', outf);
+	putc_outf(' ');
 	col--;
     }
 }
@@ -321,16 +373,18 @@ char *editold, *editnew;
 	    editsaves[i] = outbuf[editpos[i]];
 	    outbuf[editpos[i]] = editnew[i];
 	}
-	leading_tab(thisindent);
 	cp = outbuf;
+	if (*cp != '\f' || cp[1])
+	    leading_tab(thisindent);
 	hashline = (*cp == '#');    /* a preprocessor directive */
 	spaces = 0;
 	j = 1;
 	for (i = 0; i < outbufpos; ) {
 	    if (j < numbreaks && i == breakpos[j]) {
 		if (hashline)
-		    fprintf(outf, " \\");   /* trailing backslash required */
-		putc('\n', outf);
+		    puts_outf(" \\");   /* trailing backslash required */
+		putc_outf('\n');
+		flush_outfilebuf();
 		outf_lnum++;
 		leading_tab(breakindent[j]);
 		linelen = breakindent[j];
@@ -342,35 +396,35 @@ char *editold, *editnew;
 		ch = *cp++;
 		if (ch == ' ') {
 		    spaces++;
-		} else if (ch > ' ') {
+		} else if (ch > ' ' || ch == '\f') {
 		    linelen += spaces;
 		    while (spaces > 0)
-			putc(' ', outf), spaces--;
+			putc_outf(' '), spaces--;
 		    linelen++;
 		    if (ch == '\\' && embeddedcode) {
 			if (*cp == '[') {
-			    putc('{', outf);
+			    putc_outf('{');
 			    cp++, i++;
 			} else if (*cp == ']') {
-			    putc('}', outf);
+			    putc_outf('}');
 			    cp++, i++;
 			} else
-			    putc(ch, outf);
+			    putc_outf(ch);
 		    } else
-			putc(ch, outf);
+			putc_outf(ch);
 		} else if (testinglinebreaker >= 3) {
 		    linelen += spaces;
 		    while (spaces > 0)
-			putc(' ', outf), spaces--;
+			putc_outf(' '), spaces--;
 		    linelen++;
-		    putc('\\', outf);
+		    putc_outf('\\');
 		    ch2 = spchars[ch];
 		    if (ch2 != '.')
-			putc(ch2, outf);
+			putc_outf(ch2);
 		    else {
-			putc('0' + ((ch >> 6) & 7), outf);
-			putc('0' + ((ch >> 3) & 7), outf);
-			putc('0' + (ch & 7), outf);
+			putc_outf('0' + ((ch >> 6) & 7));
+			putc_outf('0' + ((ch >> 3) & 7));
+			putc_outf('0' + (ch & 7));
 		    }
 		}
 		i++;
@@ -384,8 +438,10 @@ char *editold, *editnew;
     }
     if (suppressnewline) {
 	lastlinelength = linelen;
-    } else
-	putc('\n', outf);
+    } else {
+	putc_outf('\n');
+	flush_outfilebuf();
+    }
     outf_lnum++;
 }
 
@@ -863,7 +919,7 @@ Paren *parens;
 	    numbreaks--;
 	    return j;
 	    
-	  case '\015':    /* "hang-indent operator" */
+	  case '\016':    /* "hang-indent operator" */
 	    if (count <= breakcount[numbreaks-1] + 2 &&
 		!(flags & TB_EXTRAIND2)) {
 		breakindent[numbreaks-1] -= count - breakcount[numbreaks-1];
@@ -895,7 +951,7 @@ Paren *parens;
 
 	  case '/':
 	    if (pos < outbufpos && (outbuf[pos] == '*' ||
-				    (outbuf[pos] == '/' && cplus > 0))) {
+				    (outbuf[pos] == '/' && slashslash))) {
 		count += measurechars(pos, outbufpos-1);
 		pos = outbufpos;   /* assume comment is at end of line */
 	    }
@@ -1035,16 +1091,17 @@ register char *msg;
 	end_source();
 	while ((ch = *msg++) != 0) {
 	    if (ch >= ' ') {
-		putc(ch, outf);
-	    } else if (ch == '\n') {
-		putc('\n', outf);
+		putc_outf(ch);
+	    } else if (ch == '\n' || ch == '\r') {
+		putc_outf(ch);
+		flush_outfilebuf();
 		outf_lnum++;
 	    }
 	}
 	return;
     }
     while ((ch = *msg++) != 0) {
-	if (ch == '\n') {
+	if (ch == '\n' || ch == '\r') {
 	    if (outbufpos == 0) {      /* blank line */
 		thisfutureindent = -1;
 		blanklines++;
@@ -1058,7 +1115,8 @@ register char *msg;
             while (blanklines > 0) {
                 blanklines--;
 		end_source();
-                putc('\n', outf);
+                putc_outf('\n');
+		flush_outfilebuf();
 		outf_lnum++;
             }
 	    if (thisindent + outbufcount >= linewidth && !dontbreaklines) {
@@ -1160,7 +1218,7 @@ register char *msg;
 		outbuf = REALLOC(outbuf, outbufsize, char);
 	    }
 	    outbuf[outbufpos++] = ch;
-	    if (ch >= ' ')
+	    if (ch >= ' ' || ch == '\f')
 		outbufcount++;
 	}
     }
@@ -1229,13 +1287,13 @@ char *fn;
     inf = fopen(fn, "r");
     if (!inf) {
 	perror(fn);
-	exit(1);
+	exit_failure();
     }
     sprintf(buf, "%s.br", fn);
     outf = fopen(buf, "w");
     if (!outf) {
 	perror(buf);
-	exit(1);
+	exit_failure();
     }
     setup_out();
     outindent = 4;
@@ -1300,6 +1358,7 @@ Strlist *cmt;
     int saveindent = outindent, savesingle = deltaindent, theindent;
     int saveeat = eatcomments;
     int i = 0;
+    int slash;
 
     if (!cmt)
 	return NULL;
@@ -1312,7 +1371,14 @@ Strlist *cmt;
 	    output(format_sd("[]  [%s:%d]",
 			     CMT_NAMES[getcommentkind(cmt)],
 			     cmt->value & CMT_MASK));
-	for (cp = cmt->s; *cp; cp++) {
+	cp = cmt->s;
+	if (cp[1] == '\014') {
+	    output("\f\n");
+	    cp += 2;
+	    if (*cp == '\001')
+		cp++;
+	}
+	for ( ; *cp; cp++) {
 	    output("\n");
 	    if (cmtdebug && cp[1])
 		output("[]");
@@ -1336,16 +1402,22 @@ Strlist *cmt;
 	    theindent = outindent;
 	    deltaindent = 0;
 	}
+	slash = 0;
     } else {
 	moreindent(deltaindent);
 	if (cmt->s[0] == '\004')
 	    outindent = 0;
 	theindent = outindent;
 	deltaindent = 0;
-	output("/*");
+	slash = (slashslash &&
+		 (slashslash == 2 || outbufpos == 0 || outbuf[0] != '#'));
+	if (!slash)
+	    output("/*");
     }
     cp = cmt->s;
     for (;;) {
+	if (slash)
+	    output("//");
 	if (*cp == '\002')
 	    cp++;
 	else if (*cp == '\003' || *cp == '\004') {
@@ -1383,7 +1455,9 @@ Strlist *cmt;
 	    output("\n");
 	}
     } else {
-	output("*/\n");
+	if (!slash)
+	    output("*/");
+	output("\n");
     }
     outindent = saveindent;
     deltaindent = savesingle;

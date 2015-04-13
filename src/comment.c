@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@ Static int grabbed_comment;
 /* Special comment forms:
 
    \001\001\001...      Blank line(s), one \001 char per blank line
+   \001\014\001\001...  Form feed followed by blank lines
    \002text...          Additional line for previous comment
    \003text...          Additional comment line, absolutely indented
    \004text...		Note or warning line, unindented
@@ -107,6 +108,8 @@ int always;
 	    for (cmt = cmtfirst; cmt; cmt = cmt->next) {
 		if (cmt->s[0] == '\001') {   /* blank line(s) */
 		    len = strlen(cmt->s);
+		    if (cmt->s[1] == '\014')
+			len = 100;
 		    if (len > longest) {
 			longest = len;
 			cmtblank = cmt;
@@ -188,7 +191,6 @@ Stmt *sbase;
 {
     Strlist *cmt;
     long serial, i, j;
-    int kind;
 
     if (spitorphancomments)
 	return;
@@ -201,7 +203,6 @@ Stmt *sbase;
     attach_mark(sbase);
     for (cmt = curcomments; cmt; cmt = cmt->next) {
 	serial = cmt->value & CMT_MASK;
-	kind = getcommentkind(cmt);
 	if (serial < 0 || serial >= cmttablesize || cmttable[serial])
 	    continue;
 	i = 0;
@@ -240,7 +241,7 @@ void setcommentkind(cmt, kind)
 Strlist *cmt;
 int kind;
 {
-    cmt->value = (cmt->value & CMT_MASK) | (kind << CMT_SHIFT);
+    cmt->value = (cmt->value & CMT_MASK) | ((long)kind << CMT_SHIFT);
 }
 
 
@@ -259,15 +260,22 @@ int kind;
 	return;
     if (eatcomments == 1)
 	return;
-    for (cp = curtokbuf; (cp = my_strchr(cp, '*')) != NULL; ) {
-	if (*++cp == '/') {
-	    cp[-1] = '%';
-	    note("Changed \"* /\" to \"% /\" in comment [140]");
+    sl = strlist_append(&curcomments, curtokbuf);
+    /* This fix only works for one-line EMBED comments, but at least */
+    /* it's better than nothing. */
+    if (!isembedcomment(sl)) {
+	for (cp = sl->s; (cp = my_strchr(cp, '*')) != NULL; ) {
+	    if (*++cp == '/') {
+		cp[-1] = '%';
+		note("Changed \"* /\" to \"% /\" in comment [140]");
+	    }
 	}
     }
-    sl = strlist_append(&curcomments, curtokbuf);
     sl->value = curserial;
     setcommentkind(sl, kind);
+    if (cmtdebug > 1)
+	fprintf(outf, "Parsed comment [%s:%ld] \"%s\"\n",
+		CMT_NAMES[kind], curserial, curtokbuf);
 }
 
 
@@ -281,12 +289,17 @@ long serial;
     Strlist *sl, *base = NULL, **pbase = (defer) ? &curcomments : &base;
     char *prefix;
 
-    if (defer && (outf != stdout || !quietmode))
-	printf("%s, line %d: %s\n", infname, inf_lnum, msg);
-    else if (outf != stdout)
-	printf("%s, line %d/%d: %s\n", infname, inf_lnum, outf_lnum, msg);
+    if (!quietmode) {
+	if (defer) {
+	    if (outf == stdout)
+		fprintf(stderr, "\"%s\", line %d: %s\n", infname, inf_lnum, msg);
+	    else
+		printf("\"%s\", line %d: %s\n", infname, inf_lnum, msg);
+	} else if (outf != stdout)
+	    printf("\"%s\", line %d,%d: %s\n", infname, inf_lnum, outf_lnum, msg);
+    }
     if (verbose)
-	fprintf(logf, "%s, %d/%d: %s\n", infname, inf_lnum, outf_lnum, msg);
+	fprintf(logf, "%s:%d:%d: %s\n", infname, inf_lnum, outf_lnum, msg);
     if (notephase == 2 || regression)
 	prefix = format_s("\004 p2c: %s:", infname);
     else
@@ -327,7 +340,7 @@ long serial;
 Strlist *grabcomment(kind)
 int kind;
 {
-    char *cp, *cp2;
+    char *cp, *cp2, *cp3, *cp4;
     Strlist *cmt, *savecmt;
 
     if (grabbed_comment || spitcomments == 1)
@@ -358,9 +371,52 @@ int kind;
 	return NULL;
     while (isspace(*cp))
 	cp++;
+    if (*cp == ';' || *cp == ',' || *cp == '.')
+	cp++;
+    while (isspace(*cp))
+	cp++;
     if (*cp)
 	return NULL;
     *cp2 = 0;
+    if (kind == CMT_ONBEGIN || kind == CMT_ONEND) {
+	cp = curtokbuf;
+	while (isspace(*cp)) cp++;
+	if (!strcincmp(cp, "of ", 3)) {
+	    cp3 = cp;
+	    cp4 = cp + 3;
+	    while ((*cp3++ = *cp4++) != 0) ;
+	    cp2 -= 3;
+	}
+	if (!strcincmp(cp, "procedure", 9) && isspace(cp[9]) &&
+	    isalpha(cp[10]))
+	    cp += 10;
+	else if (!strcincmp(cp, "function", 8) && isspace(cp[8]) &&
+	    isalpha(cp[9]))
+	    cp += 9;
+	cp3 = cp;
+	while (isalnum(*cp) || *cp == '_' || *cp == '$' || *cp == '%')
+	    cp++;
+	cp4 = cp;
+	while (*cp4 == ' ') cp4++;
+	if (cp4 == cp2) {
+	    *cp = 0;
+	    if (!strcicmp(cp3, "procedure") ||
+		!strcicmp(cp3, "function") ||
+		!strcicmp(cp3, "if") || 
+		!strcicmp(cp3, "else") || 
+		!strcicmp(cp3, "for") ||
+		!strcicmp(cp3, "while") ||
+		!strcicmp(cp3, "with") ||
+		!strcicmp(cp3, "case") ||
+		(curctx && !strcicmp(cp3, curctx->name) &&
+		 kind == CMT_ONBEGIN)) {
+		grabbed_comment = 1;
+		return NULL;
+	    }
+	    if (cp != cp2)
+		*cp = ' ';
+	}
+    }
     savecmt = curcomments;
     curcomments = NULL;
     commentline(kind);
@@ -368,7 +424,7 @@ int kind;
     curcomments = savecmt;
     grabbed_comment = 1;
     if (cmtdebug > 1)
-	fprintf(outf, "Grabbed comment [%d] \"%s\"\n", cmt->value & CMT_MASK, cmt->s);
+	fprintf(outf, "Grabbed comment [%ld] \"%s\"\n", cmt->value & CMT_MASK, cmt->s);
     return cmt;
 }
 
@@ -376,7 +432,8 @@ int kind;
 
 int matchcomment(cmt, kind, stamp)
 Strlist *cmt;
-int kind, stamp;
+int kind;
+long stamp;
 {
     if (spitcomments == 1 && (cmt->value & CMT_MASK) != 10000 &&
 	*cmt->s != '\001' && (kind >= 0 || stamp >= 0))
@@ -401,12 +458,14 @@ int kind, stamp;
 
 Strlist *findcomment(cmt, kind, stamp)
 Strlist *cmt;
-int kind, stamp;
+int kind;
+long stamp;
 {
     while (cmt && !matchcomment(cmt, kind, stamp))
 	cmt = cmt->next;
     if (cmt && cmtdebug > 1)
-	fprintf(outf, "Found comment [%d] \"%s\"\n", cmt->value & CMT_MASK, cmt->s);
+	fprintf(outf, "Found comment [%ld] \"%s\"\n",
+		cmt->value & CMT_MASK, cmt->s);
     return cmt;
 }
 
@@ -414,7 +473,8 @@ int kind, stamp;
 
 Strlist *extractcomment(cmt, kind, stamp)
 Strlist **cmt;
-int kind, stamp;
+int kind;
+long stamp;
 {
     Strlist *base, **last, *sl;
 
@@ -422,7 +482,7 @@ int kind, stamp;
     while ((sl = *cmt)) {
 	if (matchcomment(sl, kind, stamp)) {
 	    if (cmtdebug > 1)
-		fprintf(outf, "Extracted comment [%d] \"%s\"\n",
+		fprintf(outf, "Extracted comment [%ld] \"%s\"\n",
 		        sl->value & CMT_MASK, sl->s);
 	    *cmt = sl->next;
 	    *last = sl;
@@ -437,12 +497,13 @@ int kind, stamp;
 
 void changecomments(cmt, okind, ostamp, kind, stamp)
 Strlist *cmt;
-int okind, ostamp, kind, stamp;
+int okind, kind;
+long ostamp, stamp;
 {
     while (cmt) {
 	if (matchcomment(cmt, okind, ostamp)) {
 	    if (cmtdebug > 1)
-		fprintf(outf, "Changed comment [%s:%d] \"%s\" ",
+		fprintf(outf, "Changed comment [%s:%ld] \"%s\" ",
 			CMT_NAMES[getcommentkind(cmt)],
 			cmt->value & CMT_MASK, cmt->s);
 	    if (kind >= 0)
@@ -450,7 +511,7 @@ int okind, ostamp, kind, stamp;
 	    if (stamp >= 0)
 		cmt->value = (cmt->value & ~CMT_MASK) | stamp;
 	    if (cmtdebug > 1)
-		fprintf(outf, " to [%s:%d]\n",
+		fprintf(outf, " to [%s:%ld]\n",
 			CMT_NAMES[getcommentkind(cmt)], cmt->value & CMT_MASK);
 	}
 	cmt = cmt->next;

@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -117,7 +117,7 @@ Static void initrc()
                 *((Strlist **)rctable[i].ptr) = NULL;
 		break;
 	    case 'X':
-		if (rctable[i].def == 1)
+		if (rctable[i].def == 1 || rctable[i].def == 4)
 		    *((Strlist **)rctable[i].ptr) = NULL;
 		break;
         }
@@ -158,9 +158,13 @@ int need;
             while (--i >= 0 && strcmp(rctable[i].name, cp)) ;
             if (i >= 0) {
                 if (rctable[i].kind != 'M') {
-                    cp = my_strtok(NULL, " =\t\n");
-                    if (cp && *cp == '#')
-                        cp = NULL;
+		    if (rctable[i].kind == 'X' && rctable[i].def == 4) {
+			cp = my_strtokq(NULL, " =\t\n");
+		    } else {
+			cp = my_strtok(NULL, " =\t\n");
+			if (cp && *cp == '#')
+			    cp = NULL;
+		    }
                     if (cp && (isdigit(*cp) || *cp == '-' || *cp == '+'))
                         val = atol(cp);
                     else
@@ -251,10 +255,17 @@ int need;
                         switch (rctable[i].def) {
 
                             case 1:     /* strlist with string values */
+                            case 4:     /* same, allowing quotes */
                                 if (cp) {
                                     sl = strlist_append((Strlist **)rctable[i].ptr, cp);
-                                    cp = my_strtok(NULL, " =\t\n");
-                                    if (cp && *cp != '#')
+				    if (rctable[i].def == 4) {
+					cp = my_strtokq(NULL, " =\t\n");
+				    } else {
+					cp = my_strtok(NULL, " =\t\n");
+					if (cp && *cp == '#')
+					    cp = NULL;
+				    }
+                                    if (cp)
                                         sl->value = (long)stralloc(cp);
                                 }
                                 break;
@@ -344,12 +355,24 @@ Static void postrc()
 	useAnyptrMacros = (ansiC > 0 || cplus > 0) ? 2 : 1;
     if (usePPMacros < 0)
 	usePPMacros = (ansiC > 0 || cplus > 0) ? 0 : 2;
+    if (newdelete < 0)
+	newdelete = (cplus > 0) ? 1 : 0;
     if (voidstar < 0)
         voidstar = (ansiC > 0 || cplus > 0) ? 1 : 0;
     if (hassignedchar < 0)
         hassignedchar = (ansiC > 0) ? 1 : 0;
     if (useconsts < 0)
         useconsts = (ansiC > 0 || cplus > 0) ? 1 : 0;
+    if (slashslash < 0)
+	slashslash = (cplus > 0) ? 1 : 0;
+    if (userefs < 0)
+        userefs = (cplus > 0) ? 1 : 0;
+    if (useinits < 0)
+        useinits = (cplus > 0) ? 4 : 1;
+    if (anonymousunions < 0)
+        anonymousunions = (cplus > 0) ? 1 : 0;
+    if (callcasts < 0)
+        callcasts = (cplus > 0) ? 1 : 0;
     if (copystructs < 0)
         copystructs = (ansiC != 0 || cplus > 0) ? 3 : 0;
     if (copystructfuncs < 0)
@@ -379,7 +402,7 @@ Static void postrc()
     scharname = (*name_SCHAR) ? name_SCHAR :
                 (signedchars == 1) ? "char" : 
                 (useAnyptrMacros == 1) ? "Signed char" : "signed char";
-    for (longbits = 1, val = LONG_MAX; val >>= 1; longbits++) ;
+    for (longbits = 1, val = LONG_MAX; (val >>= 1); longbits++) ;
     if (sizeof_char) {
         if (sizeof_char < 8 && ansiC > 0)
             fprintf(stderr, "Warning: chars have less than 8 bits\n");
@@ -406,13 +429,13 @@ Static void postrc()
             min_sshort = LONG_MIN;
             max_sshort = LONG_MAX;
         } else {
-            min_sshort = - (1<<(sizeof_short-1));
-            max_sshort = (1<<(sizeof_short-1)) - 1;
+            min_sshort = - (1L<<(sizeof_short-1));
+            max_sshort = (1L<<(sizeof_short-1)) - 1;
         }
         if (sizeof_short >= longbits)
             max_ushort = LONG_MAX;
         else
-            max_ushort = (1<<sizeof_short) - 1;
+            max_ushort = (1L<<sizeof_short) - 1;
     } else {
         min_sshort = -32768;   /* Ansi-required minimum maxima */
         max_sshort = 32767;
@@ -427,7 +450,7 @@ Static void postrc()
         which_lang = LANG_TURBO;
     } else if (!strcmp(language, "UCSD")) {
         which_lang = LANG_UCSD;
-    } else if (!strcmp(language, "MPW")) {
+    } else if (!strcmp(language, "MPW") || !strcmp(language, "OBJECT")) {
         which_lang = LANG_MPW;
     } else if (!strcmp(language, "HPUX") || !strcmp(language, "HP-UX")) {
 	which_lang = LANG_HP;
@@ -441,6 +464,10 @@ Static void postrc()
     } else if (!strncmp(language, "BERK", 4) ||
 	       !strcmp(language, "SUN")) {
 	which_lang = LANG_BERK;
+    } else if (!strcmp(language, "TIP")) {
+	which_lang = LANG_TIP;
+    } else if (!strcmp(language, "APOLLO")) {
+	which_lang = LANG_APOLLO;
     } else {
         if (*language && strcmp(language, "HP") && strcmp(language, "MODCAL"))
             fprintf(stderr, "Warning: Language %s not recognized, using HP\n", language);
@@ -452,14 +479,18 @@ Static void postrc()
 	pascalcasesens = (which_lang == LANG_MODULA) ? 2 :
 	                 (which_lang == LANG_BERK) ? 3 : 0;
     if (implementationmodules < 0)
-	implementationmodules = (which_lang == LANG_VAX) ? 1 : 0;
+	implementationmodules = (which_lang == LANG_VAX ||
+				 which_lang == LANG_APOLLO ||
+				 which_lang == LANG_BERK) ? 1 : 0;
     if (integer16 < 0)
         integer16 = (which_lang == LANG_TURBO ||
-		     which_lang == LANG_MPW) ? 1 : 0;
+		     which_lang == LANG_MPW ||
+		     which_lang == LANG_TIP) ? 1 : 0;
     if (doublereals < 0)
 	doublereals = (hpux_lang ||
 		       which_lang == LANG_OREGON ||
-		       which_lang == LANG_VAX) ? 0 : 1;
+		       which_lang == LANG_VAX ||
+		       which_lang == LANG_TIP) ? 0 : 1;
     if (pascalenumsize < 0)
 	pascalenumsize = (which_lang == LANG_HP) ? 16 : 8;
     if (storefilenames < 0)
@@ -479,17 +510,23 @@ Static void postrc()
 			  which_lang == LANG_BERK) ? 2 : 0;
     if (importall < 0)
         importall = (which_lang == LANG_HP) ? 1 : 0;
+    if (turboobjects < 0)
+	turboobjects = (which_lang == LANG_MPW) ? 0 : 1;
     if (seek_base < 0)
         seek_base = (which_lang == LANG_TURBO ||
-			  which_lang == LANG_MPW ||
-		     which_lang == LANG_UCSD) ? 0 : 1;
+		     which_lang == LANG_MPW ||
+		     which_lang == LANG_UCSD ||
+		     which_lang == LANG_TIP) ? 0 : 1;
+    if (lowpreclogicals < 0)
+	lowpreclogicals = (which_lang == LANG_TIP);
     if (unsignedchar < 0 && signedchars == 0)
         unsignedchar = 2;
     if (hasstaticlinks < 0)
 	hasstaticlinks = (which_lang == LANG_HP) ? 1 : 0;
     if (dollar_idents < 0)
 	dollar_idents = (which_lang == LANG_OREGON ||
-			 which_lang == LANG_VAX) ? 1 : 0;
+			 which_lang == LANG_VAX ||
+			 which_lang == LANG_TIP) ? 1 : 0;
     if (ignorenonalpha < 0)
 	ignorenonalpha = (which_lang == LANG_UCSD) ? 1 : 0;
     if (stringtrunclimit < 0)
@@ -602,12 +639,11 @@ void showinitfile()
     f = fopen(name, "r");
     if (!f) {
 	perror(name);
-	exit(1);
+	exit_failure();
     }
     while ((ch = getc(f)) != EOF)
 	putchar(ch);
     fclose(f);
-    exit(0);
 }
 
 
@@ -616,9 +652,14 @@ void showinitfile()
 void usage()
 {
     fprintf(stderr, "usage: p2c [options] file [modulename] [-h file.h] [-o file.c]\n");
-    exit(EXIT_FAILURE);
+    exit_failure();
 }
 
+
+
+struct bitfieldtest {
+    int f1 : 2;
+};
 
 
 int main(argc, argv)
@@ -644,8 +685,10 @@ char **argv;
     init_stuff();
     i = 0;
     while (i < argc && strcmp(argv[i], "-i")) i++;
-    if (i < argc)
+    if (i < argc) {
 	showinitfile();
+	return EXIT_SUCCESS;
+    }
     initrc();
     setup_dir();
     infname = infnbuf;
@@ -671,6 +714,10 @@ char **argv;
     } else
         if (!readrc("p2crc", 0))
             readrc(".p2crc", 0);
+    if (!*codefnfmt) {
+	fprintf(stderr, "Unable to find required system p2crc file\n");
+	exit_failure();
+    }
     codefname = codefnbuf;
     *codefname = 0;
     hdrfname = hdrfnbuf;
@@ -701,6 +748,65 @@ char **argv;
 		upc(language);
             } else if (!strcmp(*argv, "-q")) {
                 quietmode = 1;
+	    } else if (!strcmp(*argv, "-comp")) {
+		/* Set defaults for compiler-like usage */
+		maxalts = 100;
+		elimdeadcode = 0;
+		analyzeflow = 0;
+		foldconsts = 1;
+		foldstrconsts = 1;
+		offsetforloops = 0;
+		keepnulls = 1;
+		hasstaticlinks = 1;
+		mod_po2 = 0;
+		div_po2 = 0;
+		assumebits = 0;
+		assumesigns = 0;
+		formatstrings = 1;
+		structfilesflag = 1;
+		fullstrwrite = 1;
+	    } else if (!strcmp(*argv, "-local")) {
+		/* Assume target machine is same that which compiled p2c */
+		unsigned int ui;
+		unsigned long ul;
+		unsigned short us;
+		unsigned char uc;
+		int i;
+		char ch;
+		struct bitfieldtest bft;
+#ifdef __STDC__
+		ansiC = 1;
+#endif
+		ch = (char)0xffff;
+		signedchars = (ch < 0);
+		bft.f1 = 0xffff;
+		signedfield = (bft.f1 < 0);
+		i = -1;
+		i >>= 1;
+		signedshift = (i < 0);
+		uc = -1;
+		sizeof_char = 0;
+		while (uc) uc >>= 1, sizeof_char++;
+		us = -1;
+		sizeof_short = 0;
+		while (us) us >>= 1, sizeof_short++;
+		ui = -1;
+		sizeof_int = 0;
+		while (ui) ui >>= 1, sizeof_int++;
+		ul = -1;
+		sizeof_long = 0;
+		while (ul) ul >>= 1, sizeof_long++;
+	    } else if (!strcmp(*argv, "-check")) {
+		/* Enable all error checking */
+		casecheck = 1;
+		arraycheck = 1;
+		nilcheck = 1;
+		malloccheck = 1;
+		checkfileisopen = 1;
+		checkreadformat = 1;
+		checkfileeof = 1;
+		checkstdineof = 1;
+		checkfileseek = 1;
             } else if (!strcmp(*argv, "-o")) {
                 if (*codefname || --argc <= 0)
                     usage();
@@ -725,6 +831,7 @@ char **argv;
             } else if (!strcmp(*argv, "-v")) {
                 /* already done above */
             } else if (!strcmp(*argv, "-H")) {
+		argc--, argv++;
                 /* already done above */
 	    } else if (argv[0][1] == 'I') {
 		if (strlen(*argv) == 2 && argc > 1) {
@@ -766,7 +873,7 @@ char **argv;
 		    strlen(argv[1]) > 2 &&
 		    !strcmp(argv[1] + strlen(argv[1]) - 2, ".c")) {
 		    testlinebreaker(i, argv[1]);
-		    exit(EXIT_SUCCESS);
+		    return EXIT_SUCCESS;
 		} else
 		    testlinebreaker(i, NULL);
 	    } else if (argv[0][1] == 'C') {
@@ -774,6 +881,11 @@ char **argv;
 		    cmtdebug = 1;
 		else
 		    cmtdebug = atoi(*argv + 2);
+	    } else if (argv[0][1] == 'F') {
+		if (strlen(*argv) == 2)
+		    flowdebug = 1;
+		else
+		    flowdebug = atoi(*argv + 2);
             } else if (!strcmp(*argv, "-R")) {
 		regression = 1;
             } else if (argv[0][1] == 'V') {
@@ -802,12 +914,12 @@ char **argv;
 	if (strlen(infname) > 2 &&
 	    !strcmp(infname + strlen(infname) - 2, ".c")) {
 	    fprintf(stderr, "What is wrong with this picture?\n");
-	    exit(EXIT_FAILURE);
+	    exit_failure();
 	}
         inf = fopen(infname, "r");
         if (!inf) {
             perror(infname);
-            exit(EXIT_FAILURE);
+            exit_failure();
         }
         if (!*codefname)
             strcpy(codefname, format_s(codefnfmt, infname));
@@ -822,9 +934,13 @@ char **argv;
         codef = fopen(codefname, "w");
         if (!codef) {
             perror(codefname);
-            exit(EXIT_FAILURE);
+            exit_failure();
         }
-        fprintf(codef, "/* Output from p2c, the Pascal-to-C translator */\n");
+	i = (slashslash > 0 || (slashslash < 0 && cplus > 0));
+	fprintf(codef, i ? "// " : "/* ");
+        fprintf(codef, "Output from p2c %s, the Pascal-to-C translator",
+		P2C_VERSION);
+	fprintf(codef, i ? "\n" : " */\n");
     } else {
         strcpy(codefname, "<stdout>");
         codef = stdout;
@@ -881,8 +997,10 @@ char **argv;
     setup_complete = 1;
     savequiet = quietmode;
     quietmode = 1;
-    for (sl = librfiles; sl; sl = sl->next)
-        (void)p_search(format_none(sl->s), "pas", 0);
+    for (sl = librfiles; sl; sl = sl->next) {
+	if (strlist_find(librfiles, sl->s) == sl)
+	    (void)p_search(format_none(sl->s), "pas", 0);
+    }
     for (i = 0; i < numsearch; i++)
         (void)p_search(format_none(searchlist[i]), "pas", 1);
     quietmode = savequiet;
@@ -891,14 +1009,19 @@ char **argv;
     flushcomments(NULL, -1, -1);
     showendnotes();
     check_unused_macros();
-    printf("\n");
-    if (!showprogress)
+    if (!quietmode)
+	printf("\n");
+    if (!showprogress && !quietmode)
 	fprintf(stderr, "\n");
     output("\n");
     if (requested_module && !found_module)
         error(format_s("Module \"%s\" not found in file", requested_module));
-    if (codef != stdout)
-        output("\n\n/* End. */\n");
+    if (codef != stdout) {
+	if (slashslash)
+	    output("\n\n// End.\n");
+	else
+	    output("\n\n/* End. */\n");
+    }
     if (inf != stdin)
         fclose(inf);
     if (codef != stdout)
@@ -907,9 +1030,15 @@ char **argv;
     mem_summary();
     if (!quietmode)
         fprintf(stderr, "Translation completed.\n");
-    exit(EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }
 
+
+
+void exit_failure()
+{
+    exit(EXIT_FAILURE);
+}
 
 
 
@@ -1000,13 +1129,13 @@ Type *tp;
         return;
     }
     if (ISBOGUS(tp)) {
-	fprintf(outf, "0x%lX\n", tp);
+	fprintf(outf, "0x%lX\n", (long)tp);
 	return;
     }
-    fprintf(outf, "      Type %lx, kind=%s", tp, typekindname(tp->kind));
+    fprintf(outf, "      Type %lx, kind=%s", (long)tp, typekindname(tp->kind));
 #ifdef HASDUMPS
     fprintf(outf, ", meaning=%lx, basetype=%lx, indextype=%lx\n",
-            tp->meaning, tp->basetype, tp->indextype);
+            (long)tp->meaning, (long)tp->basetype, (long)tp->indextype);
     tp->dumped = 1;
     if (tp->basetype)
 	dumptype(tp->basetype);
@@ -1026,14 +1155,15 @@ Meaning *mp;
         return;
     }
     if (ISBOGUS(mp)) {
-	fprintf(outf, "0x%lX\n", mp);
+	fprintf(outf, "0x%lX\n", (long)mp);
 	return;
     }
-    fprintf(outf, "   Meaning %lx, name=%s, kind=%s", mp, ((mp->name) ? mp->name : "<null>"),
-                                                     meaningkindname(mp->kind));
+    fprintf(outf, "   Meaning %lx, name=%s, kind=%s",
+	    (long)mp, ((mp->name) ? mp->name : "<null>"),
+	    meaningkindname(mp->kind));
 #ifdef HASDUMPS
     fprintf(outf, ", ctx=%lx, cbase=%lx, cnext=%lx, type=%lx\n",
-            mp->ctx, mp->cbase, mp->cnext, mp->type);
+            (long)mp->ctx, (long)mp->cbase, (long)mp->cnext, (long)mp->type);
     if (mp->type && !mp->type->dumped)
 	dumptype(mp->type);
     mp->dumped = 1;
@@ -1077,7 +1207,7 @@ int waddr;
 	return;
     }
     if (ISBOGUS(tp)) {
-	fprintf(outf, "0x%lX", tp);
+	fprintf(outf, "0x%lX", (long)tp);
 	return;
     }
     if (tp == tp_int)             fprintf(outf, "I");
@@ -1117,7 +1247,7 @@ int waddr;
 	    waddr = 1;
 	}
 	if (waddr) {
-	    fprintf(outf, "%lX", tp);
+	    fprintf(outf, "%lX", (long)tp);
 	    if (tp->dumped)
 		return;
 	    fprintf(outf, ":");
@@ -1251,7 +1381,7 @@ Expr *ex;
         return;
     }
     if (ISBOGUS(ex)) {
-	fprintf(outf, "0x%lX", ex);
+	fprintf(outf, "0x%lX", (long)ex);
 	return;
     }
     if (ex->kind == EK_CONST && ex->val.type == tp_integer &&
@@ -1291,7 +1421,7 @@ Expr *ex;
         }
     }
     if (ISBOGUS(ex->val.s))
-	fprintf(outf, "[0x%lX]", ex->val.s);
+	fprintf(outf, "[0x%lX]", (long)ex->val.s);
     else if (ex->val.s) {
         switch (ex->kind) {
 
@@ -1310,7 +1440,7 @@ Expr *ex;
                         fprintf(outf, "[s=%s]", ex->val.s);
                         break;
                     default:
-                        fprintf(outf, "[s=%lx]", ex->val.s);
+                        fprintf(outf, "[s=%lx]", (long)ex->val.s);
                 }
                 break;
         }
@@ -1353,7 +1483,7 @@ int indent;
     }
     while (sp) {
 	if (ISBOGUS(sp)) {
-	    fprintf(outf, "0x%lX\n", sp);
+	    fprintf(outf, "0x%lX\n", (long)sp);
 	    return;
 	}
         fprintf(outf, "%s", stmtkindname(sp->kind));
@@ -1369,6 +1499,7 @@ int indent;
             fprintf(outf, ", exp3=");
             dumpexpr(sp->exp3);
         }
+	if (indent < 0) break;
         fprintf(outf, "\n");
         if (sp->stm1) {
             fprintf(outf, "%*sstm1=", indent, "");

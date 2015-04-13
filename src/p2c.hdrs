@@ -1,5 +1,5 @@
 
-/* Declarations created by "makeproto" on Wed Apr 24 13:30:07 1991 */
+/* Declarations created by "makeproto" on Tue Dec  7 20:57:13 1993 */
 
 
 
@@ -9,6 +9,7 @@ extern void     closelogfile       PV();
 extern void     showinitfile       PV();
 extern void     usage              PV();
 extern int      main               PP( (int argc, char **argv) );
+extern void     exit_failure       PV();
 extern int      outmem             PV();
 extern int      ISBOGUS            PP( (char *p) );
 extern char    *meaningkindname    PP( (enum meaningkind kind) );
@@ -52,11 +53,11 @@ extern void     strchange          PP( (char **v, char *s) );
 extern char    *format_gen         PP( (char *fmt, long i1, long i2, double dbl,
                                         char *s1, char *s2, char *s3) );
 extern char    *format_none        PP( (char *fmt) );
-extern char    *format_d           PP( (char *fmt, int a1) );
+extern char    *format_d           PP( (char *fmt, long a1) );
 extern char    *format_g           PP( (char *fmt, double a1) );
 extern char    *format_s           PP( (char *fmt, char *a1) );
 extern char    *format_ss          PP( (char *fmt, char *a1, char *a2) );
-extern char    *format_sd          PP( (char *fmt, char *a1, int a2) );
+extern char    *format_sd          PP( (char *fmt, char *a1, long a2) );
 extern char    *format_ds          PP( (char *fmt, long a1, char *a2) );
 extern char    *format_dd          PP( (char *fmt, long a1, long a2) );
 extern char    *format_sss         PP( (char *fmt, char *a1, char *a2, char *a3) );
@@ -71,11 +72,15 @@ extern char    *strlower           PP( (char *s) );
 extern char    *my_strchr          PP( (char *cp, int c) );
 extern char    *my_strrchr         PP( (char *cp, int c) );
 extern char    *my_strtok          PP( (char *cp, char *delim) );
+extern char    *my_strtokq         PP( (char *cp, char *delim) );
 extern long     my_strtol          PP( (char *buf, char **ret, int base) );
 extern void     init_stuff         PV();
 
 /* Declarations from out.c */
 extern void     setup_out          PV();
+extern int      grow_outfilebuf    PV();
+extern void     flush_outfilebuf   PV();
+extern void     puts_outf          PP( (char *s) );
 extern void     select_outfile     PP( (FILE *fp) );
 extern void     start_source       PV();
 extern void     end_source         PV();
@@ -117,11 +122,11 @@ extern void     setcommentkind     PP( (Strlist *cmt, int kind) );
 extern void     commentline        PP( (int kind) );
 extern void     addnote            PP( (char *msg, long serial) );
 extern Strlist *grabcomment        PP( (int kind) );
-extern int      matchcomment       PP( (Strlist *cmt, int kind, int stamp) );
-extern Strlist *findcomment        PP( (Strlist *cmt, int kind, int stamp) );
-extern Strlist *extractcomment     PP( (Strlist **cmt, int kind, int stamp) );
-extern void     changecomments     PP( (Strlist *cmt, int okind, int ostamp,
-                                        int kind, int stamp) );
+extern int      matchcomment       PP( (Strlist *cmt, int kind, long stamp) );
+extern Strlist *findcomment        PP( (Strlist *cmt, int kind, long stamp) );
+extern Strlist *extractcomment     PP( (Strlist **cmt, int kind, long stamp) );
+extern void     changecomments     PP( (Strlist *cmt, int okind, long ostamp,
+                                        int kind, long stamp) );
 
 /* Declarations from lex.c */
 extern char    *fixpascalname      PP( (char *name) );
@@ -163,6 +168,7 @@ extern Symbol  *findsymbol_opt     PP( (char *name) );
 extern Symbol  *findsymbol         PP( (char *name) );
 extern void     clearprogress      PV();
 extern void     progress           PV();
+extern void     replacestrings     PP( (char *buf, Strlist *sl) );
 extern void     getline            PV();
 extern void     push_input_file    PP( (FILE *fp, char *fname, int isinclude) );
 extern void     include_as_import  PV();
@@ -183,7 +189,9 @@ extern void     get_C_string       PP( (int term) );
 extern void     begincommenting    PP( (char *cp) );
 extern void     saveinputcomment   PP( (char *cp) );
 extern void     endcommenting      PP( (char *cp) );
+extern char    *peeknextptr        PV();
 extern int      peeknextchar       PV();
+extern int      peeknextword       PP( (char *word) );
 extern void     gettok             PV();
 extern void     checkkeyword       PP( (Token tok) );
 extern void     checkmodulewords   PV();
@@ -205,6 +213,7 @@ extern void     nukestmt           PP( (Stmt *sp) );
 extern void     splicestmt         PP( (Stmt *sp, Stmt *spnew) );
 extern int      stmtcount          PP( (Stmt *sp) );
 extern Stmt    *close_files_to_ctx PP( (Meaning *ctx) );
+extern void     withrecordtype     PP( (Type *tp, Expr *ex) );
 extern int      simplewith         PP( (Expr *ex) );
 extern int      simplefor          PP( (Stmt *sp, Expr *ex) );
 extern int      tryfuncmacro       PP( (Expr **exp, Meaning *mp) );
@@ -219,6 +228,9 @@ extern Expr    *print_func         PP( (Expr *ex) );
 extern int      printnl_func       PP( (Expr *ex) );
 extern Expr    *chg_printf         PP( (Expr *ex) );
 extern Expr    *mix_printf         PP( (Expr *ex, Expr *ex2) );
+extern int      proveexprprop      PP( (Expr *ex, Stmt *sp, int prop) );
+extern Expr    *flow_fixexpr       PP( (Expr *ex, Stmt *sp, int env) );
+extern void     flowblock          PP( (Stmt *sp) );
 extern void     eatstmt            PP( (Stmt **spp) );
 extern int      haslabels          PP( (Stmt *sp) );
 extern void     fixblock           PP( (Stmt **spp, Stmt *thereturn) );
@@ -253,7 +265,8 @@ extern void     pushctx            PP( (Meaning *ctx) );
 extern void     popctx             PV();
 extern void     forget_ctx         PP( (Meaning *ctx, int all) );
 extern void     handle_nameof      PV();
-extern int      issafename         PP( (Symbol *sp, int isglobal, int isdefine) );
+extern int      issafename         PP( (Symbol *sp, int isglobal, int isdefine,
+                                        int isfield) );
 extern void     setupmeaning       PP( (Meaning *mp, Symbol *sym,
                                         enum meaningkind kind,
                                         enum meaningkind namekind) );
@@ -267,6 +280,7 @@ extern void     readdmeaning       PP( (Meaning *mp) );
 extern Meaning *addfield           PP( (Symbol *sym, Meaning ***flast,
                                         Type *rectype, Meaning *tname) );
 extern int      isfiletype         PP( (Type *type, int big) );
+extern int      israndomfile       PP( (Type *type) );
 extern Meaning *isfilevar          PP( (Expr *ex) );
 extern Type    *filebasetype       PP( (Type *type) );
 extern Expr    *filebasename       PP( (Expr *ex) );
@@ -282,13 +296,16 @@ extern void     outdeclarator      PP( (Type *type, char *name, int flags) );
 extern Type    *canonicaltype      PP( (Type *type) );
 extern int      identicaltypes     PP( (Type *t1, Type *t2) );
 extern int      similartypes       PP( (Type *t1, Type *t2) );
+extern int      tinyexpr           PP( (Expr *ex) );
 extern void     declarefiles       PP( (Strlist *fnames) );
 extern char    *variantfieldname   PP( (int num) );
 extern int      record_is_union    PP( (Type *tp) );
 extern void     outfieldlist       PP( (Meaning *mp) );
 extern void     declarebigfile     PP( (Type *type) );
 extern void     outbasetype        PP( (Type *type, int flags) );
-extern void     out_type           PP( (Type *type, int witharrays) );
+extern void     out_type           PP( (Type *type, int flags) );
+extern int      onewordstring      PP( (char *cp) );
+extern int      onewordtype        PP( (Type *type, int flags) );
 extern int      varstorageclass    PP( (Meaning *mp) );
 extern char    *storageclassname   PP( (int i) );
 extern void     declarevar         PP( (Meaning *mp, int which) );
@@ -307,6 +324,7 @@ extern int      typebits           PP( (long smin, long smax) );
 extern int      packedsize         PP( (char *fname, Type **typep, long *sizep,
                                         int mode) );
 extern void     decl_comments      PP( (Meaning *mp) );
+extern void     makestructtag      PP( (Type *type, char *tname) );
 extern void     p_attributes       PV();
 extern void     ignore_attributes  PV();
 extern int      size_attributes    PV();
@@ -326,11 +344,13 @@ extern Expr    *p_subconst         PP( (Type *type, int style) );
 extern void     p_constdecl        PV();
 extern void     declaresubtypes    PP( (Meaning *mp) );
 extern void     declaretype        PP( (Meaning *mp) );
+extern int      preservetype       PP( (Type *type) );
 extern void     declaretypes       PP( (int outflag) );
 extern void     p_typedecl         PV();
 extern void     setupfilevar       PP( (Meaning *mp) );
 extern Meaning *validatedtype      PP( (Meaning *dtype, Type *type) );
-extern void     p_vardecl          PV();
+extern void     p_vardecl          PP( (int iscommon) );
+extern void     p_commondecl       PV();
 extern void     p_valuedecl        PV();
 extern Meaning *maketempvar        PP( (Type *type, char *name) );
 extern Meaning *makestmttempvar    PP( (Type *type, char *name) );
@@ -378,6 +398,7 @@ extern Expr    *makeexpr_bicall_4  PP( (char *name, Type *type, Expr *arg1,
 extern Expr    *makeexpr_bicall_5  PP( (char *name, Type *type, Expr *arg1,
                                         Expr *arg2, Expr *arg3, Expr *arg4,
                                         Expr *arg5) );
+extern Expr    *makeexpr_SETIO     PP( (Expr *flag, char *code, Expr *name) );
 extern Expr    *copyexpr           PP( (Expr *ex) );
 extern int      exprsame           PP( (Expr *a, Expr *b, int strict) );
 extern int      exprequiv          PP( (Expr *a, Expr *b) );
@@ -501,6 +522,8 @@ extern Expr    *dots_n_hats        PP( (Expr *ex, Type *target) );
 extern Expr    *p_index            PP( (Expr *ex, Expr *ex2) );
 extern Expr    *fake_dots_n_hats   PP( (Expr *ex) );
 extern void     var_reference      PP( (Meaning *mp) );
+extern Expr    *expr_reference     PP( (Expr *ex) );
+extern Expr    *p_variable         PP( (Type *target) );
 extern Expr    *p_ord_expr         PV();
 extern Expr    *packset            PP( (Expr *ex, Type *type) );
 extern Expr    *p_setfactor        PP( (Type *target, int sure) );
@@ -509,13 +532,18 @@ extern Expr    *p_funcarglist      PP( (Expr *ex, Meaning *args, int firstarg,
 extern Expr    *replacemacargs     PP( (Expr *ex, Expr *fex) );
 extern Expr    *p_noarglist        PP( (Expr *ex, Meaning *mp, Meaning *args) );
 extern void     func_reference     PP( (Meaning *func) );
+extern Expr    *p_memcall          PP( (Expr *expr, Meaning *mp) );
 extern Expr    *p_funccall         PP( (Meaning *mp) );
 extern Expr    *accumulate_strlit  PV();
 extern Expr    *pascaltypecast     PP( (Type *type, Expr *ex2) );
+extern Expr    *p_sexpr            PP( (Type *target) );
+extern Expr    *p_rexpr            PP( (Type *target) );
+extern Expr    *p_andexpr          PP( (Type *target) );
 extern Expr    *p_expr             PP( (Type *target) );
 extern Type    *nametotype         PP( (char *name) );
-extern int      istypespec         PV();
+extern int      istypespec         PP( (int iscast) );
 extern Expr    *pc_parentype       PP( (char *cp) );
+extern Expr    *pc_typename        PV();
 extern Expr    *pc_factor          PV();
 extern Expr    *pc_expr2           PP( (int prec) );
 extern Expr    *pc_expr            PV();

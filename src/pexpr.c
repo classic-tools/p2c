@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -84,6 +84,21 @@ Type *target;
 		tp2->basetype->fbase->kind == MK_VARPARAM)
 		ex = makeexpr_hat(ex, 0);    /* returns pointer to structured result */
 	    continue;
+	} else if (ex->val.type->kind == TK_FUNCTION &&
+		   ex->val.type->meaning &&
+		   ex->val.type->meaning->kind == MK_FUNCTION &&
+		   ex->val.type->meaning->rectype) {
+	    if (curtok == TOK_LPAR || !target ||
+		(target->kind != TK_PROCPTR &&
+		 target->kind != TK_CPROCPTR)) {
+		ex = p_memcall(ex, ex->val.type->meaning);
+		continue;
+	    } else {
+		ex = makeexpr_addrf(ex);
+		ex->val.type = tp_cproc;
+		note("Pointer to member function may need to be fixed [343]");
+		continue;
+	    }
 	}
         switch (curtok) {
 
@@ -116,10 +131,22 @@ Type *target;
 		    gettok();
 		    break;
 		}
-                mp = curtoksym->fbase;
-                while (mp && mp->rectype != ex->val.type)
-                    mp = mp->snext;
-                if (mp)
+		tp = ex->val.type;
+		if (tp->kind == TK_POINTER &&
+		    tp->basetype->kind == TK_RECORD &&
+		    tp->basetype->issigned) {
+		    ex = makeexpr_hat(ex, 0);
+		    tp = tp->basetype;
+		}
+		while (tp) {
+		    mp = curtoksym->fbase;
+		    while (mp && mp->rectype != tp)
+			mp = mp->snext;
+		    if (mp)
+			break;
+		    tp = tp->basetype;
+		}
+                if (tp)
                     ex = makeexpr_dot(ex, mp);
                 else {
                     warning(format_s("No field called %s in that record [288]", curtokbuf));
@@ -161,6 +188,8 @@ Expr *ex, *ex2;
 	       tp->kind == TK_SMALLARRAY) {
 	if (tp->smax) {
 	    ord_range_expr(tp->indextype, &ex3, NULL);
+	    if (ex3->kind == EK_VAR)
+		var_reference((Meaning *)ex3->val.i);
 	    ex2 = makeexpr_minus(ex2, copyexpr(ex3));
 	    if (!nodependencies(ex2, 0) &&
 		*getbitsname == '*') {
@@ -187,6 +216,8 @@ Expr *ex, *ex2;
 	    return ex;
 	} else {
 	    ord_range_expr(ex->val.type->indextype, &ex3, NULL);
+	    if (ex3->kind == EK_VAR)
+		var_reference((Meaning *)ex3->val.i);
 	    if (debug>2) { fprintf(outf, "ord_range_expr returns "); dumpexpr(ex3); fprintf(outf, "\n"); }
 	    return makeexpr_index(ex, ex2, copyexpr(ex3));
 	}
@@ -313,8 +344,21 @@ Meaning *mp;
 }
 
 
+Expr *expr_reference(ex)
+Expr *ex;
+{
+    int i;
 
-Static Expr *p_variable(target)
+    for (i = 0; i < ex->nargs; i++)
+        expr_reference(ex->args[i]);
+    if (ex->kind == EK_VAR)
+	var_reference((Meaning *)ex->val.i);
+    return ex;
+}
+
+
+
+Expr *p_variable(target)
 Type *target;
 {
     Expr *ex, *ex2;
@@ -344,8 +388,11 @@ Type *target;
     }
     var_reference(curtokmeaning);
     mp = curtokmeaning;
-    if (mp->kind == MK_FIELD) {
-        ex = makeexpr_dot(copyexpr(withexprs[curtokint]), mp);
+    if (curtokint >= 0  /*mp->kind == MK_FIELD*/) {
+	if (withexprs[curtokint])
+	    ex = makeexpr_dot(copyexpr(withexprs[curtokint]), mp);
+	else
+	    ex = makeexpr_name(mp->name, mp->type);
     } else if (mp->kind == MK_CONST &&
 	       mp->type->kind == TK_SET &&
 	       mp->constdefn) {
@@ -389,7 +436,12 @@ Type *target;
     } else if (mp->kind == MK_VAR ||
                mp->kind == MK_CONST ||
                mp->kind == MK_PARAM) {
-        ex = makeexpr_var(mp);
+	if (mp->varstructflag && mp->isref) {
+	    ex = makeexpr_var(mp);
+	    ex->val.type = makepointertype(ex->val.type);
+	    ex = makeexpr_hat(ex, 0);
+	} else
+	    ex = makeexpr_var(mp);
     } else {
         symclass(mp->sym);
         ex = makeexpr_name(mp->name, tp_integer);
@@ -589,9 +641,9 @@ int sure;
                               last[i]->val.i < setbits))) {
                 if (last[i]) {
                     for (j = first[i]->val.i; j <= last[i]->val.i; j++)
-                        val.i |= 1<<j;
+                        val.i |= 1L << j;
                 } else
-		    val.i |= 1 << first[i]->val.i;
+		    val.i |= 1L << first[i]->val.i;
                 doneflag[i] = 1;
                 donecount++;
             }
@@ -745,7 +797,7 @@ int firstarg, ismacro;
 		mp = mp->xnext;
 	    }
 	    if (mp &&
-		(peeknextchar() == ':' || !curtokmeaning || isnonpos)) {
+		(peeknextchar() == 1 || !curtokmeaning || isnonpos)) {
 		gettok();
 		wneedtok(TOK_ASSIGN);
 		prevarg = mp2;
@@ -780,7 +832,13 @@ int firstarg, ismacro;
         switch (args->kind) {
 
             case MK_PARAM:
-	        if (castit && tp->kind == TK_REAL &&
+	        if (args->isref) {
+		    if (tp2 != tp && !isconf &&
+			(tp2->kind != TK_STRING ||
+			 tp->kind != TK_STRING))
+			warning(format_s("Type mismatch in VAR parameter %s [295]",
+					 args->name));
+		} else if (castit && tp->kind == TK_REAL &&
 		    ex2->val.type->kind != TK_REAL)
                     ex2 = makeexpr_cast(ex2, tp);
                 else if (ord_type(tp)->kind == TK_INTEGER && !ismacro)
@@ -851,10 +909,10 @@ int firstarg, ismacro;
 		    break;
 		}
 		ex->args[fakenum++] =
-		    makeexpr_arglong(copyexpr(tp2->indextype->smin),
+		    makeexpr_arglong(expr_reference(copyexpr(tp2->indextype->smin)),
 				     integer16 == 0);
 		ex->args[fakenum++] =
-		    makeexpr_arglong(copyexpr(tp2->indextype->smax),
+		    makeexpr_arglong(expr_reference(copyexpr(tp2->indextype->smax)),
 				     integer16 == 0);
 		tp = tp->basetype;
 		tp2 = tp2->basetype;
@@ -942,6 +1000,35 @@ Meaning *func;
 	for (mp = curctx->ctx; mp != func->ctx; mp = mp->ctx)
 	    mp->varstructflag = 1;
     }
+}
+
+
+Expr *p_memcall(expr, mp)
+Expr *expr;
+Meaning *mp;
+{
+    Meaning *tvar, *mp2;
+    Expr *ex;
+    int firstarg = 0;
+
+    mp2 = mp->type->fbase;
+    ex = makeexpr_un(EK_SPCALL, mp->type->basetype, expr);
+    if (mp2 && mp2->isreturn) {  /* pointer to buffer for return value */
+	tvar = makestmttempvar(ex->val.type->basetype,
+			       (ex->val.type->basetype->kind == TK_STRING) ? name_STRING : name_TEMP);
+	insertarg(&ex, 1, makeexpr_addr(makeexpr_var(tvar)));
+	mp2 = mp2->xnext;
+	firstarg++;
+    }
+    if (mp2 && curtok != TOK_LPAR) {
+	ex = p_noarglist(ex, mp, mp2);
+    } else if (curtok == TOK_LPAR) {
+	gettok();
+	ex = p_funcarglist(ex, mp2, firstarg, 0);
+	skipcloseparen();
+    }
+    ex->val.i = 1;
+    return ex;
 }
 
 
@@ -1188,17 +1275,52 @@ Type *target;
 	    else
 		return makeexpr_cond(ex, ex2, makeexpr_long(0));
 
+	case TOK_INHERITED:
+	    gettok();
+	    if (!wexpecttok(TOK_IDENT))
+		skiptotoken(TOK_IDENT);
+	    type = curtokmeaning->rectype;
+	    if (type) type = type->basetype;
+	    while (type) {
+		mp2 = curtoksym->fbase;
+		while (mp2 && mp2->rectype != type)
+		    mp2 = mp2->snext;
+		if (mp2)
+		    break;
+		type = type->basetype;
+	    }
+	    if (type) {
+		if (mp2->kind == MK_FUNCTION)
+		    ex = makeexpr_var(mp2->xnext);
+		else
+		    ex = makeexpr_name(format_ss("%s::%s",
+						 type->meaning->name,
+						 mp2->name),
+				       mp2->type);
+	    } else {
+		warning(format_s("No field called %s in that object [332]",
+				 curtokbuf));
+		return p_variable(target);
+	    }
+	    gettok();
+	    return dots_n_hats(ex, target);
+
         case TOK_IDENT:
             mp = curtokmeaning;
+	    if (mp == mp_new_normal)
+		mp = curtokmeaning = mp_new_turbo;
             switch ((mp) ? mp->kind : MK_VAR) {
 
                 case MK_TYPE:
-                    gettok();
+		    gettok();
                     type = mp->type;
                     switch (curtok) {
 
                         case TOK_LPAR:    /* Turbo type cast */
                             gettok();
+			    if (type->kind == TK_RECORD && type->issigned &&
+				!turboobjects)
+				type = makepointertype(type);
                             ex2 = p_expr(type);
 			    ex = pascaltypecast(type, ex2);
                             skipcloseparen();
@@ -1228,6 +1350,40 @@ Type *target;
 				    return makeexpr_name(mp->name, mp->type);
                             }
 
+			case TOK_DOT:
+			    gettok();
+			    if (!wexpecttok(TOK_IDENT))
+				skiptotoken(TOK_IDENT);
+			    if (type->kind == TK_RECORD) {
+				while (type) {
+				    mp2 = curtoksym->fbase;
+				    while (mp2 && mp2->rectype != type)
+					mp2 = mp2->snext;
+				    if (mp2)
+					break;
+				    type = type->basetype;
+				}
+				if (type) {
+				    if (mp2->kind == MK_FUNCTION)
+					ex = makeexpr_var(mp2->xnext);
+				    else
+					ex = makeexpr_name(format_ss("%s::%s",
+								     type->meaning->name,
+								     mp2->name),
+							   mp2->type);
+				} else {
+				    warning(format_s("No field called %s in that object [332]",
+						     curtokbuf));
+				    return p_variable(target);
+				}
+				gettok();
+				return dots_n_hats(ex, target);
+			    } else {
+				warning(format_s("%s is not an object type",
+						 type->meaning->name));
+				return p_variable(target);
+			    }
+
 			default:
 			    wexpected("an expression");
 			    return makeexpr_name(mp->name, mp->type);
@@ -1235,7 +1391,8 @@ Type *target;
 
                 case MK_SPECIAL:
                     if (mp->handler && mp->isfunction &&
-			(curtok == TOK_LPAR || !target ||
+			(peeknextchar() == '(' ||
+			 !target || mp == mp_self_func ||
 			 (target->kind != TK_PROCPTR &&
 			  target->kind != TK_CPROCPTR))) {
                         gettok();
@@ -1254,7 +1411,7 @@ Type *target;
                         ex = (*mp->handler)(mp);
 			if (!ex)
 			    ex = makeexpr_long(0);
-			return ex;
+			return dots_n_hats(ex, target);
                     } else {
 			if (target &&
 			    (target->kind == TK_PROCPTR ||
@@ -1268,6 +1425,8 @@ Type *target;
 
                 case MK_FUNCTION:
                     mp->refcount++;
+		    if (mp->rectype)
+			return p_variable(target);
                     need_forward_decl(mp);
 		    gettok();
                     if (mp->isfunction &&
@@ -1464,6 +1623,8 @@ Type *target;
 
             case TOK_AND:
 	    case TOK_AMP:
+		if (lowpreclogicals || peeknextword("THEN"))
+		    return ex;
 		useshort = (curtok == TOK_AMP);
                 gettok();
                 ex2 = p_powterm(tp_integer);
@@ -1495,7 +1656,7 @@ Type *target;
 
 
 
-Static Expr *p_sexpr(target)
+Expr *p_sexpr(target)
 Type *target;
 {
     Expr *ex, *ex2;
@@ -1576,6 +1737,8 @@ Type *target;
 		    /* fall through */
 
                 case TOK_OR:
+		    if (lowpreclogicals || peeknextword("ELSE"))
+			return ex;
 		    useshort = (curtok == TOK_VBAR);
                     gettok();
                     ex2 = p_term(tp_integer);
@@ -1603,16 +1766,24 @@ Type *target;
 
 
 
-Expr *p_expr(target)
+Expr *p_rexpr(target)
 Type *target;
 {
-    Expr *ex = p_sexpr(target);
-    Expr *ex2, *ex3, *ex4;
+    Expr *ex, *ex2, *ex3, *ex4;
     Type *type;
     Meaning *tvar;
     long mask, smin, smax;
     int i, j;
 
+    if (curtok == TOK_NOT && lowpreclogicals) {
+	gettok();
+	ex = p_rexpr(target);
+	if (ord_type(ex->val.type)->kind == TK_INTEGER)
+	    return makeexpr_un(EK_BNOT, tp_integer, ex);
+	else
+	    return makeexpr_not(ex);
+    }
+    ex = p_sexpr(target);
     switch (curtok) {
 
         case TOK_EQ:
@@ -1656,7 +1827,7 @@ Type *target;
                     ex3 = NULL;
                 ex4 = copyexpr(ex);
                 if (ex->kind == EK_CONST && smallsetconst)
-                    ex = makesmallsetconst(1<<ex->val.i, ex2->val.type);
+                    ex = makesmallsetconst(1L<<ex->val.i, ex2->val.type);
                 else
                     ex = makeexpr_bin(EK_LSH, ex2->val.type,
                                       makeexpr_longcast(makeexpr_long(1), 1),
@@ -1694,9 +1865,9 @@ Type *target;
                     ex4 = NULL;
                     i = 0;
                     while (i < setbits) {
-                        if (mask & (1<<i++)) {
-                            if (i+1 < setbits && (mask & (2<<i))) {
-                                for (j = i; j < setbits && (mask & (1<<j)); j++) ;
+                        if (mask & (1L<<i++)) {
+                            if (i+1 < setbits && (mask & (2L<<i))) {
+                                for (j = i; j < setbits && (mask & (1L<<j)); j++) ;
                                 ex4 = makeexpr_or(ex4,
                                         makeexpr_range(copyexpr(ex),
                                                        makeexpr_val(make_ord(type, i-1)),
@@ -1759,6 +1930,59 @@ Type *target;
 
 
 
+Expr *p_andexpr(target)
+Type *target;
+{
+    Expr *ex = p_rexpr(target);
+    Expr *ex2;
+    int useshort = 0;
+
+    while (curtok == TOK_AND && (lowpreclogicals || peeknextword("THEN"))) {
+	gettok();
+	if (curtok == TOK_THEN) {
+	    useshort = 1;
+	    gettok();
+	}
+	ex2 = p_rexpr(tp_integer);
+	if (ord_type(ex->val.type)->kind == TK_INTEGER)
+	    ex = makeexpr_bin(EK_BAND, ex->val.type, ex, ex2);
+	else if (partial_eval_flag || useshort ||
+		 (shortopt && nosideeffects(ex2, 1)))
+	    ex = makeexpr_and(ex, ex2);
+	else
+	    ex = makeexpr_bin(EK_BAND, tp_boolean, ex, ex2);
+    }
+    return ex;
+}
+
+
+
+Expr *p_expr(target)
+Type *target;
+{
+    Expr *ex = p_andexpr(target);
+    Expr *ex2;
+    int useshort = 0;
+
+    while (curtok == TOK_OR && (lowpreclogicals || peeknextword("ELSE"))) {
+	gettok();
+	if (curtok == TOK_ELSE) {
+	    useshort = 1;
+	    gettok();
+	}
+	ex2 = p_andexpr(tp_integer);
+	if (ord_type(ex->val.type)->kind == TK_INTEGER)
+	    ex = makeexpr_bin(EK_BOR, ex->val.type, ex, ex2);
+	else if (partial_eval_flag || useshort ||
+		 (shortopt && nosideeffects(ex2, 1)))
+	    ex = makeexpr_or(ex, ex2);
+	else
+	    ex = makeexpr_bin(EK_BOR, tp_boolean, ex, ex2);
+    }
+    return ex;
+}
+
+
 
 
 
@@ -1776,14 +2000,24 @@ char *name;
 }
 
 
-int istypespec()
+int istypespec(iscast)
+int iscast;
 {
+    char *cp;
+
     switch (curtok) {
 
         case TOK_CONST:
             return 1;
 
         case TOK_IDENT:
+	    cp = peeknextptr();
+	    if (*cp == ')' && iscast) {
+		while (isspace(*++cp)) ;
+		if (*cp == '(' || isalnum(*cp)) {
+		    return 1;   /* assume (x)(y) is a cast */
+		}
+	    }
             return !strcmp(curtokcase, "volatile") ||
                    !strcmp(curtokcase, "void") ||
                    !strcmp(curtokcase, "char") ||
@@ -1830,6 +2064,50 @@ char *cp;
     return ex;
 }
 
+
+Expr *pc_typename()
+{
+    Type *tp;
+    int sign = 0;
+
+    if (!strcmp(curtokcase, "signed")) {
+	sign = 1;
+	gettok();
+    } else if (!strcmp(curtokcase, "unsigned")) {
+	sign = -1;
+	gettok();
+    } else if (!strcmp(curtokcase, "struct") || !strcmp(curtokcase, "union") ||
+	       !strcmp(curtokcase, "class") || !strcmp(curtokcase, "enum"))
+	gettok();
+    if (!strcmp(curtokcase, "void"))
+	tp = tp_void;
+    else if (!strcmp(curtokcase, "char"))
+	tp = (sign > 0) ? tp_schar : (sign < 0) ? tp_uchar : tp_char; 
+    else if (!strcmp(curtokcase, "short"))
+	tp = (sign >= 0) ? tp_sshort : tp_ushort;
+    else if (!strcmp(curtokcase, "int"))
+	tp = (sign >= 0) ? tp_int : tp_uint;
+    else if (!strcmp(curtokcase, "long"))
+	tp = (sign >= 0) ? tp_integer : tp_unsigned;
+    else if (!strcmp(curtokcase, "float"))
+	tp = tp_real;
+    else if (!strcmp(curtokcase, "double"))
+	tp = tp_longreal;
+    else if (curtokmeaning && curtokmeaning->kind == MK_TYPE)
+	tp = curtokmeaning->type;
+    else {
+	warning("Unrecognized C type name [339]");
+	return makeexpr_name(curtokcase, tp_integer);
+    }
+    gettok();
+    if (curtok == TOK_IDENT && !strcmp(curtokcase, "int"))
+	gettok();
+    while (curtok == TOK_STAR) {
+	tp = makepointertype(tp);
+	gettok();
+    }
+    return makeexpr_type(tp);
+}
 
 
 
@@ -1884,7 +2162,7 @@ Expr *pc_factor()
         case TOK_LPAR:
             cp = inbufptr;
             gettok();
-            if (istypespec()) {
+            if (istypespec(1)) {
                 ex = pc_parentype(cp);
                 return makeexpr_bin(EK_LITCAST, tp_integer, ex, pc_expr2(14));
             }
@@ -1899,7 +2177,7 @@ Expr *pc_factor()
                     return makeexpr_sizeof(pc_expr2(14), 1);
                 cp = inbufptr;
                 gettok();
-                if (istypespec()) {
+                if (istypespec(0)) {
                     ex = makeexpr_sizeof(pc_parentype(cp), 1);
                 } else {
                     ex = makeexpr_sizeof(pc_expr(), 1);
@@ -1907,6 +2185,38 @@ Expr *pc_factor()
                 }
                 return ex;
             }
+	    if (!strcmp(curtokcase, "new") &&
+		(cplus > 0 || isalpha(peeknextchar()))) {
+		gettok();
+		ex = pc_typename();
+		if (curtok == TOK_LBR) {
+		    gettok();
+		    ex = makeexpr_bin(EK_NEW, makepointertype(ex->val.type),
+				      ex, pc_expr());
+		    wneedtok(TOK_RBR);
+		} else
+		    ex = makeexpr_un(EK_NEW, makepointertype(ex->val.type),
+				     ex);
+		return ex;
+	    }
+	    if (!strcmp(curtokcase, "delete") &&
+		(cplus > 0 || isalpha(peeknextchar()) ||
+		 peeknextchar() == '[')) {
+		gettok();
+		if (curtok == TOK_LBR) {
+		    gettok();
+		    if (curtok != TOK_RBR)
+			ex = pc_expr();
+		    else
+			ex = makeexpr_name("", tp_integer);
+		    wneedtok(TOK_RBR);
+		    ex = makeexpr_bin(EK_DELETE, makepointertype(ex->val.type),
+				      pc_expr(), ex);
+		} else
+		    ex = makeexpr_un(EK_DELETE, makepointertype(ex->val.type),
+				     pc_expr());
+		return ex;
+	    }
             if (curtoksym->flags & FMACREC) {
                 ex = makeexpr(EK_MACARG, 0);
                 ex->val.type = tp_integer;
@@ -2244,7 +2554,12 @@ int env;
                 ex->args[0] = fixexpr(ex->args[0], ENV_BOOL);
                 ex = makeexpr_cond(ex->args[0],
                                    makeexpr_long(0),
-                                   makeexpr_bicall_1(name_ESCIO, tp_int, ex->args[1]));
+                                   (ex->nargs == 2)
+				   ? makeexpr_bicall_1(name_ESCIO, tp_int,
+						       ex->args[1])
+				   : makeexpr_bicall_2(name_ESCIO2, tp_int,
+						       ex->args[1],
+						       ex->args[2]));
             } else if (!strcmp(cp, name_CHKIO)) {
                 ex->args[0] = fixexpr(ex->args[0], ENV_BOOL);
                 ex->args[2] = fixexpr(ex->args[2], env);
@@ -2491,10 +2806,10 @@ int env;
         case EK_OR:
             for (i = 0; i < ex->nargs; ) {
                 ex->args[i] = fixexpr(ex->args[i], ENV_BOOL);
-		if (checkconst(ex->args[i], (ex->kind == EK_OR) ? 0 : 1) &&
-		    ex->nargs > 1)
+		j = proveexprprop(ex->args[i], fixexpr_stmt, PROP_ZERO);
+		if (j == (ex->kind == EK_OR) && ex->nargs > 1)
 		    delfreearg(&ex, i);
-		else if (checkconst(ex->args[i], (ex->kind == EK_OR) ? 1 : 0))
+		else if (j == (ex->kind == EK_AND))
 		    return grabarg(ex, i);
 		else
 		    i++;
@@ -2518,7 +2833,17 @@ int env;
                     ex = grabarg(ex, 0);
                     ex->val.type = tp_boolean;
                 }
+		break;
             }
+	    if (checkconst(ex->args[1], 0)) {
+		i = proveexprprop(ex->args[0], fixexpr_stmt, PROP_ZERO);
+		if (i >= 0) {
+		    ex = makeexpr_val(make_ord(tp_boolean,
+					       (ex->kind == EK_EQ) ? i : !i));
+		    break;
+		}
+	    }
+	    ex = makeexpr_rel(ex->kind, ex->args[0], ex->args[1]);
             break;
 
         case EK_COND:
@@ -2588,12 +2913,23 @@ int env;
             }
             break;
 
+	case EK_ASSIGN:
+	    ex->args[0] = fixexpr(ex->args[0], ENV_LVALUE);
+	    ex->args[1] = fixexpr(ex->args[1], ENV_EXPR);
+	    break;
+
+	case EK_POSTINC:
+	case EK_POSTDEC:
+	    ex->args[0] = fixexpr(ex->args[0], ENV_LVALUE);
+	    break;
+
         default:
             for (i = 0; i < ex->nargs; i++)
                 ex->args[i] = fixexpr(ex->args[i], ENV_EXPR);
             break;
     }
     if (debug>4) {fprintf(outf, "fixexpr returns "); dumpexpr(ex); fprintf(outf, "\n");}
+    ex = flow_fixexpr(ex, fixexpr_stmt, env);
     return fix_expression(ex, env);
 }
 
@@ -2699,7 +3035,7 @@ char *name;
     }
     output(name);
     if (breakbefore & BRK_HANG)
-	output("\015");
+	output("\016");
     if (breakbefore & BRK_RIGHT) {
 	output("\002");
 	if (breakbefore & BRK_LPREF)
@@ -2812,13 +3148,13 @@ int lev;
     Value v;
 
     unions[lev] = (mp && mp->kind == MK_VARIANT);
-    while (mp && mp->kind == MK_FIELD) {
+    while (mp && mp->kind != MK_VARIANT) {
         if (mp == field) {
             for (i = 0; i < lev; i++) {
 		v = variants[i]->val;    /* sidestep a Sun 386i compiler bug */
                 num = ord_value(v);
 		breakflag = breakbeforedot;
-                if (!unions[i]) {
+                if (!unions[i] && !anonymousunions) {
                     output(format_s(name_UNION, ""));
 		    outop2(".");
                 }
@@ -2996,6 +3332,11 @@ int prec;
 			output(",\002 ");
 		    else
 			output(",\002");
+		if (curctx->ctx->kind == MK_FUNCTION &&
+		    !curctx->ctx->varstructflag && mp->ctx != curctx)
+		    note(format_ss("Discovered too late that %s needs a %s [340]",
+				   curctx->name,
+				   format_s(name_LINK, curctx->ctx->name)));
                 out_ctx(mp->ctx, 1);
             }
             output(")");
@@ -3035,7 +3376,7 @@ int prec;
 
         case EK_SPCALL:
             setprec(16);
-            if (starfunctions) {
+            if (starfunctions && !ex->val.i) {
                 output("(\002*");
                 wrexpr(ex->args[0], 13);
                 output(")");
@@ -3055,13 +3396,52 @@ int prec;
             output(")");
             break;
 
+	case EK_NEW:
+	    setprec(16);
+	    output("new ");
+	    if (ex->nargs >= 2 &&
+		(ex->args[1]->kind != EK_NAME || *ex->args[1]->val.s))
+		new_array_size = ex->args[1];
+	    out_expr(ex->args[0]);
+	    new_array_size = NULL;
+#if 0
+	    if (ex->nargs >= 2 &&
+		(ex->args[1]->kind != EK_NAME || *ex->args[1]->val.s)) {
+		output("[");
+		out_expr(ex->args[1]);
+		output("]");
+	    }
+#endif
+	    break;
+
+	case EK_DELETE:
+	    setprec(16);
+	    output("delete ");
+	    if (ex->nargs >= 2) {
+		output("[");
+		out_expr(ex->args[1]);
+		output("] ");
+	    }
+	    out_expr(ex->args[0]);
+	    break;
+
         case EK_INDEX:
             setprec(16);
             wrexpr(ex->args[0], subprec-1);
 	    if (lookback(1) == ']')
 		output("\001");
             output("[");
-            out_expr(ex->args[1]);
+	    if (ex->args[1]->kind == EK_PLUS && ex->args[1]->nargs == 2 &&
+		ex->args[1]->args[0]->kind == EK_VAR &&
+		(ex->args[1]->args[1]->kind == EK_CONST ||
+		 ex->args[1]->args[1]->kind == EK_LONGCONST) &&
+		ex->args[1]->args[1]->val.type->kind == TK_INTEGER) {
+		out_expr(ex->args[1]->args[0]);
+		if (ex->args[1]->args[1]->val.i >= 0)
+		    output("+");
+		output(format_d("%d", ex->args[1]->args[1]->val.i));
+	    } else
+		out_expr(ex->args[1]);
             output("]");
             break;
 
@@ -3160,10 +3540,18 @@ int prec;
             } else if (ord_type(ex->args[0]->val.type)->kind == TK_ENUM &&
                        ex->val.type == tp_int && !useenum) {
                 wrexpr(ex->args[0], prec);
-            } else {
+            } else if (callcasts &&
+		       onewordtype(ex->val.type, ODECL_ARRAYPTRS)) {
+		out_type(ex->val.type, 0);
+		if (spacefuncs)
+		    output(" ");
+		output("(\002");
+		out_expr(ex->args[0]);
+		output(")");
+	    } else {
                 setprec2(14);
                 output("(");
-                out_type(ex->val.type, 0);
+                out_type(ex->val.type, ODECL_ARRAYPTRS);
                 output(")\002");
                 EXTRASPACE();
                 if (extraparens != 0)
@@ -3174,15 +3562,26 @@ int prec;
             break;
 
         case EK_LITCAST:
-            setprec2(14);
-            output("(");
-            out_expr(ex->args[0]);
-            output(")\002");
-            EXTRASPACE();
-            if (extraparens != 0)
-                wrexpr(ex->args[1], 15);
-            else
-                wrexpr(ex->args[1], subprec-1);
+	    if (callcasts &&
+		((ex->args[0]->kind == EK_TYPENAME &&
+		  onewordtype(ex->args[0]->val.type, 0)) ||
+		 (ex->args[0]->kind == EK_NAME &&
+		  onewordstring(ex->args[0]->val.s)))) {
+		out_expr(ex->args[0]);
+		output("(\002");
+		out_expr(ex->args[1]);
+		output(")");
+	    } else {
+		setprec2(14);
+		output("(");
+		out_expr(ex->args[0]);
+		output(")\002");
+		EXTRASPACE();
+		if (extraparens != 0)
+		    wrexpr(ex->args[1], 15);
+		else
+		    wrexpr(ex->args[1], subprec-1);
+	    }
             break;
 
         case EK_SIZEOF:
@@ -3196,7 +3595,7 @@ int prec;
             break;
 
 	case EK_TYPENAME:
-	    out_type(ex->val.type, 1);
+	    out_type(ex->val.type, 0);
 	    break;
 
         case EK_TIMES:

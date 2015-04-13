@@ -1,7 +1,7 @@
-# Standard configuration file for "p2c" 1.20, the Pascal to C translator
-#  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+# Standard configuration file for "p2c" 1.21alpha-07.Dec.93, the Pascal to C translator
+#  Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
 #  Author: Dave Gillespie.
-#  Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+#  Author's address: daveg@synaptics.com.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -44,7 +44,7 @@
 # notation %H expands to the p2c home directory name, as in "%H/p2crc".
 
 # Many options simply refine defaults controlled by the Language, 
-# AnsiC, and Target options.
+# AnsiC, C++, and Target options.
 
 
 
@@ -75,7 +75,9 @@ Language                        # Known languages:
 				#  MODULA (Modula-2)
                                 #  UCSD (almost same as TURBO)
                                 #  MPW (MPW Pascal 2.0 for the Mac)
+				#  OBJECT (Object Pascal, e.g., MPW or Think)
 				#  BERK (SUN Berkeley Pascal)
+				#  TIP (Texas Instruments Pascal)
 
 Modula2				# 1=Use modula-2 block structure (IF-END)
 				# 0=Use Pascal block structure (IF-BEGIN-END)
@@ -122,6 +124,10 @@ ImportAll                       # 1=read all of each imported file, in case
 ImplModules			# 1=MODULE starts a block like PROGRAM.
 				# 0=MODULEs have export/implement sections.
 
+TurboObjects			# 1=Turbo Pascal-style OOP support
+				# 0=Object Pascal-style OOP support
+				# default=1 in Turbo, 0 in MPW/Object
+
 PascalSignif                    # Number of significant characters in Pascal
                                 # identifiers; default=unlimited
 
@@ -141,9 +147,26 @@ IgnoreNonAlpha			# 1=ignore _, $, % in Pascal identifiers
 				# 0=retain them (subject to DollarIdents)
 				# default=1 for UCSD, 0 otherwise
 
+SeekBase			# Index of first record in a file, for SEEK.
+				# default=0 for Turbo/UCSD/MPW, 1 otherwise.
+
+LowPrecLogicals			# 1=AND, OR, NOT have lowest precedence.
+				# 0=AND has same prec as *, OR same as +.
+				# default=1 for TIP, 0 otherwise.
+
+CommonExtern			# 1=TIP "common" variables are decl'd "extern"
+				# 0 or default=TIP commons are decl'd plain.
+
 InputTabSize                    # Number of characters per tab stop in input
                                 # file, for reading Pascal indentation.
                                 # Default=8.
+
+ReplaceBefore                   # Textual replacements on input text lines:
+ReplaceBefore                   # "ReplaceBefore foo = bar" replaces all
+ReplaceBefore                   # occurrences of "foo" with "bar" while
+ReplaceBefore                   # reading.  Strings may be quoted if they
+ReplaceBefore                   # contain spaces or "=" signs.  Currently
+ReplaceBefore                   # only literal matches are done, not patterns.
 
 
 
@@ -199,6 +222,13 @@ UsePPMacros                     # 1=use PP and PV macros for prototypes
                                 # 0=do not use these macros for prototypes
                                 # 2=use them only for external/forward
 				# default=0 if AnsiC=1, else 2
+
+MainType			# Type name to put in front of "main";
+				# generally either "int" or "void".  Blank
+				# works on most systems.
+
+ReplaceAfter                    # Textual replacements on output text lines;
+ReplaceAfter                    # see ReplaceBefore for details.
 
 
 
@@ -540,6 +570,11 @@ For_AllOrNone                   # 1 or default=all-or-none breaking of the
 NoBanner	     		# 1=omit "From input file..." comment
 				# 0 or default=put this command at top of file
 
+SlashSlash			# 1=use C++ // for all comments except #define
+				# 2=use C++ // even on #define lines
+				# 0=use C /* */ for all comments
+				# default=1 if C++=1, else 0
+
 EatComments                     # 1=don't copy any comments into C code
                                 # 2=don't copy comments inside procedures
                                 # 0 or default=keep all comments
@@ -562,6 +597,9 @@ MajorSpacing                    # Minimum number of blank lines between major
 
 MinorSpacing                    # Minimum number of blank lines between minor
                                 # sections, default=1.
+
+DeclSpacing                     # Minimum number of blank lines between decls
+                                # and function body, default=0 for C++, else 1.
 
 FuncSpacing                     # Minimum number of blank lines between global
                                 # functions, default=2.
@@ -611,6 +649,8 @@ SignedComment     SIGNED        # Type annotation: var c : {SIGNED} char;
 
 UnsignedComment   UNSIGNED      # Type annotation: type uc = {UNSIGNED} char;
 
+TagComment        TAGGED        # Comment for records that need struct tags:
+				# var x : record {TAGGED} ... end;
 
 
 
@@ -658,11 +698,20 @@ StarFunctions                   # 1=write "(*fp)(x,y)" to call thru func ptr
                                 # 0=write "fp(x,y)"
                                 # default=1 unless AnsiC=1
 
+SpaceStars                      # 1=write "int* x", "int& x".
+                                # 2=write "int *x" but "int& x".
+                                # 3=write "int* x" but "int &x".
+                                # 0 or default=write "int *x", "int &x".
+
+CallCasts			# 1=write "int(x)" type casts.
+				# 0=write "(int)x" type casts.
+				# default=1 if C++=1, 0 otherwise.
+
 PostIncrement                   # 1 or default=write i++ preferentially
                                 # 0=write ++i preferentially
 
 CaseSpacing                     # Number of blank lines between CASE sections,
-                                # default=0.
+                                # default=1.
 
 CaseTabs                        # 0 or default=put each CASE on its own line.
                                 # Else this is an amount by which to space
@@ -707,6 +756,10 @@ NullChar                        # 1 or default=write '\0' for null character
 HighCharInt                     # 1 or default=write '\200' as 128 and above
                                 # 0=write all char consts as characters
 
+AnonymousUnions                 # 1=use C++ anonymous unions for variant recs
+                                # 0=use regular C named unions
+                                # default=1 if C++=1, 0 otherwise
+
 MixVars                         # 1=mix all vars of same base type: int a,b;
                                 # 0=never mix variables: int a; int b;
                                 # default=mix only adjacent variables
@@ -721,7 +774,7 @@ MixFields                       # 1=mix bit-fields just like other vars
 
 MixInits                        # 1=always mix variables with initializers
                                 # 0=never mix variables with initializers
-                                # default=mix with-inits with other with-inits
+                                # default=mix only in pleasing cases
 
 MainLocals                      # 1 or default=make globals local to main if poss
                                 # 0=globals are always made global
@@ -753,6 +806,9 @@ ElimDeadCode                    # 1 or default=eliminate unreachable code
 				# 2=even eliminate "if (false)" statements
                                 # 0=leave unreachable code in place
 
+AnalyzeFlow			# 1 or default=perform data flow analysis
+				# 0=make no assumptions based on data flow
+
 FoldConstants                   # 1=instantiate non-structure const's in-line
                                 #   (applies to int, char, boolean, enum, real)
                                 # 0 or default=use #define's for constants
@@ -776,6 +832,13 @@ UseConsts                       # 1=use "const" keyword in C
 
 UseUndef			# 1=use "#undef" when #defines go out of scope
 				# 0=do not use "#undef", default=1.
+
+UseInits                        # 1=use "int x = 5" instead of "int x; x = 5"
+                                # 2=use "int x = a" for non-constant "a"
+                                # 3=use inits throughout body, a la C++
+                                # 4=use multiple inits in "if" branches, etc.
+                                # 0=do not convert assignments to initializers
+                                # default=4 if C++=1, 1 otherwise
 
 StoreFileNames                  # 1=store file names associated with file vars
                                 # 0=let the system record the name
@@ -853,7 +916,7 @@ KeepNulls                       # 1=try to preserve null (#0) chars in strings
                                 # 0 or default=ignore them (but warn)
 
 HighCharBits                    # 1=convert "ch >= 128" to "(ch & ~127) != 0"
-                                # 2=convert "ch >= 127" to "(ch & 128) != 0"
+                                # 2=convert "ch >= 128" to "(ch & 128) != 0"
                                 # 0=do not use bit ops for high characters
                                 # default=1 only if ch's signed-ness is unknown
 
@@ -864,8 +927,8 @@ StaticVariables                 # 1 or default=use "static" for private vars
                                 # 0=don't create static global vars
 
 NeedStatic                      # Names of functions or variables which
-                                # need to be declared static despite
-                                # StaticFunctions=0 or StaticVariables=0.
+NeedStatic                      # need to be declared static despite
+NeedStatic                      # StaticFunctions=0 or StaticVariables=0.
 
 AlwaysCopyValues                # 1=always make a local copy of a parameter
                                 # 0 or default=only if it appears to be changed
@@ -921,6 +984,10 @@ VarFiles                        # 1 or default="var f : file" params use &
                                 # 0=pass FILE *'s by value; must not open or
                                 #   close the file within the procedure
 
+UseRefs                         # 1=use C++ "int &x = y" when appropriate.
+                                # 0=use C "int *x = &y".
+                                # default=1 if C++=1, 0 otherwise
+
 AddrStdFiles                    # 1=okay to write "&stdout", etc.
                                 # 0 or default=not okay
 
@@ -945,6 +1012,10 @@ AssumeSigns                     # 1 or default=for e.g. na_lsl, assume
                                 #   "x" is positive, "-x" is negative.
                                 # 0=no assumptions (except for constants!)
 
+NewDelete			# 1=use C++ "new" and "delete"
+				# 0=use C "malloc" and "free"
+				# default=1 if C++=1, 0 otherwise
+
 AllocZeroNil                    # 1=na_new(p,0) must set p to nil
                                 # 0 or default=not necessary
                                 # 2=not necessary, but print a warning
@@ -955,6 +1026,9 @@ PrintfOnly                      # 1=don't use puts, putc, etc., in WRITE
 
 MixWritelns                     # 1 or default=writeln;writeln=>printf("\n\n")
                                 # 0=don't mix consecutive writeln stmts
+
+MessageStderr			# 1 or default="message" writes to stderr
+				# 0="message" is exactly like "writeln"
 
 IntegerWidth                    # Default field width for writing integers.
                                 # Default is 1 for Turbo, 12 for HP.
@@ -970,6 +1044,9 @@ WhileFgets                      # 1 or default=while (fgets(...)) { ... }
 
 UseGets                         # 1 or default=use gets to read string[255]
                                 # 0=always use fgets (with length checking)
+
+FloatScanfCode                  # Name of scanf control string for floats.
+                                # Default is "%g".
 
 NewLineSpace                    # 1=convert \n to ' ' in read(ch)
                                 # 0=leave newlines alone reading characters
@@ -1018,7 +1095,7 @@ StructFiles			# 1="file of x" produces a struct with buffer
 				#   extra variables to hold buffer and name.
 
 StructFile			# A file variable which should be treated as
-				# if StructFiles=1.
+StructFile			# if StructFiles=1.
 
 FullStrWrite                    # 1=full implementation of strwrite(s,i,j,...)
                                 # 0=ignore "j" variable and other issues
@@ -1085,6 +1162,9 @@ LogFileName       %RS.log       # Name of log file name for -V mode.
 IncludeFileName                 # Format for translating Pascal include-file
 				# names.
 
+IncludeOutFileName  %Rs.c       # Name of .c output file for an include
+                                # file generated in ExpandIncludes=0 mode.
+
 SymCase                         # 1 or default=preserve case of Pascal idents,
                                 # 0=convert all Pascal idents to lower case
 
@@ -1139,6 +1219,9 @@ StringName        STR%s         # Name of temporary string vars; %s=unique id
 SetName           SET%s         # Name of temporary set vars; %s=unique id
 FNVarName         %s_NAME       # Name of file-name vars; %s=file var
 FNSizeName        _FNSIZE       # Maximum length of file name (macro or integer)
+
+TagStructs                      # 1=Use FakeStructName for most unnamed records
+				# 0 or default=only for arrays/files of records
 
 AlternateName1    %s_           # Way to produce a second C symbol for a Pascal
                                 # symbol, where original symbol was %s.  Default
@@ -1303,17 +1386,22 @@ ImportFrom  dos		   %H/turbo.imp
 ImportFrom  crt		   %H/turbo.imp
 ImportFrom  graph          %H/turbo.imp
 
-ImportDir   %_s.pas             # Search list of other places to look for
-ImportDir   %_s.text            # the module named %s.
+ImportDir   %_s.p               # Search list of other places to look for
+ImportDir   %_s.pas             # the module named %s.
+ImportDir   %_s.text
 ImportDir   %H/%_s.imp
 
 IncludeDir  %_s                 # Search list of places to look for the
-IncludeDir  %_s.pas             # Pascal include file %s.
+IncludeDir  %_s.p               # Pascal include file %s.
+IncludeDir  %_s.pas
 IncludeDir  %_s.text
 IncludeDir  %H/%_s.pas
 
 LibraryFile %H/system.imp       # Names of import-text files to search
 LibraryFile                     # always (as if "-s name" were used).
+
+ShellVars                       # Names and values of MPW shell variables,
+ShellVars                       # for translating MPW $$SHELL( ) notation.
 
 StructFunction    sprintf       # Names of "structured functions".
 StructFunction    memcpy  memmove
@@ -1370,6 +1458,8 @@ MainName          PASCAL_MAIN   # Name of program setup function
 EscapeName        _Escape       # Name of error-generation function
 
 EscIOName         _EscIO        # Name of I/O-error-generation function
+
+EscIO2Name	  _EscIO2	# Name of named-I/O-error-generation function
 
 CheckIOName       _CHKIO        # Name of I/O-error-checking function
 
@@ -1453,6 +1543,9 @@ StrRTrimName      strrtrim      # Name of a strrtrim-like function; no default
 StrRptName        strrpt        # Name of a strrpt-like function; no default
 StrPadName        strpad        # Name of a pad-like function; no default
 
+OFSName           OFS           # Name of an OFS-like function; no default
+SEGName           SEG           # Name of a SEG-like function; no default
+
 MallocName        Malloc        # Name of a malloc-like function; default=malloc
 FreeName          Free          # Name of a dispose-like function; default=free
 FreeRvalueName    FreeR         # Name of a free-like function; default=free
@@ -1461,7 +1554,8 @@ RandRealName      _randreal     # Name of a Turbo "random" function; no default
 RandIntName       _randint      # Name of a Turbo "random()" function; no def
 RandomizeName     _randomize    # Name of a Turbo "randomize" procedure
 
-SkipSpaceName     _skipspaces   # Name of a Turbo seekeof/seekeoln skipper
+SkipNLSpaceName   _skipnlspaces # Name of a Turbo seekeof skipper
+SkipSpaceName     _skipspaces   # Name of a Turbo seekeoln skipper
 
 ReadlnName                      # Name of function or macro to skip past eoln.
                                 # Special names: fgets=use fgets with dummy var

@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -381,7 +381,7 @@ Stmt *proc_assert()
 {
     Expr *ex;
 
-    ex = p_parexpr(tp_boolean);
+    ex = p_expr(tp_boolean);
     return makestmt_call(makeexpr_bicall_1("assert", tp_void, ex));
 }
 
@@ -523,7 +523,7 @@ Static Stmt *handleopen(code)
 int code;
 {
     Stmt *sp, *sp1, *sp2, *spassign;
-    Expr *fex, *nex, *ex, *truenex, *nvex;
+    Expr *fex, *tfex, *nex, *ex, *truenex, *nvex;
     Meaning *fmp;
     int needcheckopen = 1;
     char modebuf[5], *cp;
@@ -531,6 +531,7 @@ int code;
     if (!skipopenparen())
 	return NULL;
     fex = p_expr(tp_text);
+    tfex = fex;
     fmp = isfilevar(fex);
     nvex = filenamepart(fex);
     truenex = NULL;
@@ -610,6 +611,7 @@ int code;
         strcpy(modebuf, "r+");
     }
     if (readwriteopen == 2 ||
+	(israndomfile(fex->val.type) && code != 0) ||
 	(readwriteopen &&
 	 fex->val.type != tp_text &&
 	 fex->val.type != tp_bigtext)) {
@@ -670,13 +672,20 @@ int code;
 				   sp2);
 	    }
 	} else {
-	    sp2 = makestmt_assign(filebasename(copyexpr(fex)),
-				 makeexpr_bicall_3((*freopenname) ? freopenname : "freopen",
+	    char *frname = freopenname;
+	    if (fex->kind == EK_VAR && fex->val.type == tp_text &&
+		((Meaning *)fex->val.i == mp_input ||
+		 (Meaning *)fex->val.i == mp_output)) {
+		tfex = makeexpr_var(makestmttempvar(tp_text, name_TEMP));
+		frname = "freopen";
+	    }
+	    sp2 = makestmt_assign(filebasename(copyexpr(tfex)),
+				 makeexpr_bicall_3((*frname) ? frname : "freopen",
 						   tp_text,
 						   copyexpr(nex),
 						   makeexpr_string(modebuf),
 						   filebasename(copyexpr(fex))));
-	    if (!*freopenname) {
+	    if (!*frname) {
 		sp2 = makestmt_if(makeexpr_rel(EK_NE, filebasename(copyexpr(fex)),
 					       makeexpr_nil()),
 				  sp2,
@@ -706,12 +715,15 @@ int code;
                                                                             makeexpr_string("w+"))),
                                           NULL));
     }
-    if (nex)
-	freeexpr(nex);
     if (FCheck(checkfileopen) && needcheckopen) {
-        sp = makestmt_seq(sp, makestmt_call(makeexpr_bicall_2("~SETIO", tp_void,
-                                                              makeexpr_rel(EK_NE, filebasename(copyexpr(fex)), makeexpr_nil()),
-							      makeexpr_name(filenotfoundname, tp_int))));
+        sp = makestmt_seq(sp, makestmt_call(
+				  makeexpr_SETIO(
+				      makeexpr_rel(EK_NE,
+						   filebasename(copyexpr(tfex)),
+						   makeexpr_nil()),
+				      filenotfoundname,
+				      filenamepart(tfex)
+				      ? tfex : nex)));
     }
     sp = makestmt_seq(spassign, sp);
     cp = (code == 0) ? resetbufname : setupbufname;
@@ -1033,9 +1045,8 @@ Static Stmt *proc_blockread()
                                makeexpr_long(1),
                                filebasename(copyexpr(fex)));
         if (checkeof(fex)) {
-            ex = makeexpr_bicall_2(name_SETIO, tp_void,
-                                   makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
-				   makeexpr_name(endoffilename, tp_int));
+            ex = makeexpr_SETIO(makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
+				endoffilename, fex);
         }
     }
     return wrapopencheck(makestmt_call(ex), fex);
@@ -1083,9 +1094,8 @@ Static Stmt *proc_blockwrite()
                                makeexpr_long(1),
                                filebasename(copyexpr(fex)));
         if (FCheck(checkfilewrite)) {
-            ex = makeexpr_bicall_2(name_SETIO, tp_void,
-                                   makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
-				   makeexpr_name(filewriteerrorname, tp_int));
+            ex = makeexpr_SETIO(makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
+				filewriteerrorname, fex);
         }
     }
     return wrapopencheck(makestmt_call(ex), fex);
@@ -1334,7 +1344,7 @@ Static Expr *func_chr()
 {
     Expr *ex;
 
-    ex = p_expr(tp_integer);
+    ex = p_parexpr(tp_integer);
     if ((exprlongness(ex) < 0 || ex->kind == EK_CAST) && ex->kind != EK_ACTCAST)
         ex->val.type = tp_char;
     else
@@ -1346,7 +1356,7 @@ Static Expr *func_chr()
 
 Static Stmt *proc_close()
 {
-    Stmt *sp;
+    Stmt *sp, *sp2;
     Expr *fex, *ex;
     char *opt;
 
@@ -1383,7 +1393,9 @@ Static Stmt *proc_close()
 	    note("File is being closed with PURGE option [186]");
         }
     }
-    sp = makestmt_seq(sp, makestmt_assign(filebasename(fex), makeexpr_nil()));
+    sp2 = makestmt_assign(filebasename(fex), makeexpr_nil());
+    sp2->quietelim = 1;
+    sp = makestmt_seq(sp, sp2);
     skipcloseparen();
     return sp;
 }
@@ -1601,6 +1613,32 @@ int need;
 }
 
 
+Static Expr *parse_constructor(type, var)
+Type *type;
+Expr *var;
+{
+    Meaning *mp;
+    Expr *expr = NULL;
+    int savewith = withlevel;
+
+    if (curtok == TOK_COMMA) {
+	curtokmeaning = mp;
+	withrecordtype(type, makeexpr_hat(copyexpr(var), 0));
+	gettok();
+	if (wexpecttok(TOK_IDENT)) {
+	    mp = curtokmeaning;
+	    if (mp && mp->kind == MK_FUNCTION && curtokint >= savewith) {
+		expr = p_expr(tp_void);
+	    } else
+		warning(format_s("No constructor/destructor named %s [334]",
+				 curtokbuf));
+	}
+	withlevel = savewith;
+	freeexpr(withexprs[withlevel]);
+    }
+    return expr;
+}
+
 
 Static char *choose_free_func(ex)
 Expr *ex;
@@ -1620,22 +1658,50 @@ Expr *ex;
 }
 
 
+Static int usenewdelete(tp)
+Type *tp;
+{
+    if (newdelete)
+	return 1;
+    if (tp->kind == TK_POINTER && tp->basetype->kind == TK_RECORD &&
+	tp->basetype->issigned)
+	return 1;   /* Always use new/delete for object types */
+    return 0;
+}
+
+
 Static Stmt *proc_dispose()
 {
-    Expr *ex;
+    Expr *ex, *destr = NULL;
     Type *type;
+    Stmt *sp;
     char *name, vbuf[1000];
 
     if (!skipopenparen())
 	return NULL;
     ex = p_expr(tp_anyptr);
     type = ex->val.type->basetype;
-    parse_special_variant(type, vbuf);
+    if (type->kind == TK_RECORD && type->issigned)
+	destr = parse_constructor(type, ex);
+    else
+	parse_special_variant(type, vbuf);
     skipcloseparen();
     name = find_special_variant(vbuf, "SpecialFree", specialfrees, 0);
-    if (!name)
-	name = choose_free_func(ex);
-    return makestmt_call(makeexpr_bicall_1(name, tp_void, ex));
+    if (!name && usenewdelete(ex->val.type)) {
+	if (type->kind == TK_ARRAY || type->kind == TK_SET ||
+	    type->kind == TK_STRING)
+	    sp = makestmt_call(makeexpr_bin(EK_DELETE, tp_void, ex,
+					    makeexpr_name("", tp_integer)));
+	else
+	    sp = makestmt_call(makeexpr_un(EK_DELETE, tp_void, ex));
+    } else {
+	if (!name)
+	    name = choose_free_func(ex);
+	sp = makestmt_call(makeexpr_bicall_1(name, tp_void, ex));
+    }
+    if (destr)
+	sp = makestmt_seq(makestmt_call(destr), sp);
+    return sp;
 }
 
 
@@ -1719,7 +1785,7 @@ int code;
 
     }
     if (ex2) {
-        ex = makeexpr_bicall_4("~CHKIO",
+        ex = makeexpr_bicall_4((iocheck_flag) ? "~~CHKIO" : name_CHKIO,
                                (code == 0 || code == 1) ? tp_boolean : tp_integer,
                                makeexpr_rel(EK_NE, ex2, makeexpr_nil()),
 			       makeexpr_name("FileNotOpen", tp_int),
@@ -1760,8 +1826,40 @@ Static Expr *func_eoln()
 
 Static Stmt *proc_escape()
 {
+    Stmt *sp;
     Expr *ex;
 
+    if (which_lang == LANG_TIP) {
+	if (!wexpecttok(TOK_IDENT))
+	    return NULL;
+	if (curtokmeaning && curtokmeaning->kind == MK_LABEL) {
+	    sp = makestmt(SK_GOTO);
+	    sp->exp1 = makeexpr_name(format_s(name_LABEL,
+					      curtokmeaning->name),
+				     tp_integer);
+	    gettok();
+	    return sp;
+	} else if (curtokmeaning && curtokmeaning == curctx &&
+		   curctx->kind == MK_FUNCTION) {
+	    sp = makestmt(SK_RETURN);
+	    if (curctx->kind == MK_FUNCTION && curctx->isfunction) {
+		sp->exp1 = makeexpr_var(curctx->cbase);
+		curctx->cbase->refcount++;
+	    }
+	    gettok();
+	    return sp;
+	} else if (curtokmeaning && curtokmeaning->kind == MK_MODULE) {
+	    gettok();
+	    return makestmt_call(makeexpr_bicall_1("exit", tp_void,
+						   makeexpr_name("EXIT_SUCCESS",
+								 tp_integer)));
+	} else {
+	    note("Attempting to ESCAPE beyond this function [188]");
+	    ex = makeexpr_name(curtokbuf, tp_integer);
+	    gettok();
+	    return makestmt_call(makeexpr_bicall_1("ESCAPE", tp_void, ex));
+	}
+    }
     if (curtok == TOK_LPAR)
         ex = p_parexpr(tp_integer);
     else
@@ -1801,13 +1899,18 @@ Stmt *proc_exit()
 {
     Stmt *sp;
 
+    if (curtok == TOK_IF) {
+	gettok();
+	return makestmt_if(p_expr(tp_boolean), makestmt(SK_BREAK), NULL);
+    }
     if (modula2) {
 	return makestmt(SK_BREAK);
     }
     if (curtok == TOK_LPAR) {
         gettok();
 	if (curtok == TOK_PROGRAM ||
-	    (curtok == TOK_IDENT && curtokmeaning->kind == MK_MODULE)) {
+	    (curtok == TOK_IDENT && curtokmeaning &&
+	     curtokmeaning->kind == MK_MODULE)) {
 	    gettok();
 	    skipcloseparen();
 	    return makestmt_call(makeexpr_bicall_1("exit", tp_void,
@@ -1915,7 +2018,7 @@ Static Expr *func_filepos()
 
 Static Expr *func_filesize()
 {
-    return file_iofunc(3, 1L);
+    return file_iofunc(3, 0L);
 }
 
 
@@ -1997,8 +2100,13 @@ Expr *ex;
     Expr *vex;
 
     vex = makeexpr_hat(eatcasts(ex->args[0]), 0);
-    sp = makestmt_call(makeexpr_bicall_1(choose_free_func(vex),
-					 tp_void, copyexpr(vex)));
+    if (newdelete) {
+	sp = makestmt_call(makeexpr_bin(EK_DELETE, tp_void, copyexpr(vex),
+					makeexpr_name("", tp_integer)));
+    } else {
+	sp = makestmt_call(makeexpr_bicall_1(choose_free_func(vex),
+					     tp_void, copyexpr(vex)));
+    }
     if (alloczeronil) {
         sp = makestmt_if(makeexpr_rel(EK_NE, vex, makeexpr_nil()),
                          sp, NULL);
@@ -2040,16 +2148,24 @@ Static Stmt *proc_get()
 Static Stmt *proc_getmem(ex)
 Expr *ex;
 {
+    Type *type;
     Expr *vex, *ex2, *sz = NULL;
     Stmt *sp;
 
+    type = ex->args[0]->val.type;
     vex = makeexpr_hat(eatcasts(ex->args[0]), 0);
     ex2 = ex->args[1];
     if (vex->val.type->kind == TK_POINTER)
         ex2 = convert_size(vex->val.type->basetype, ex2, "GETMEM");
     if (alloczeronil)
         sz = copyexpr(ex2);
-    ex2 = makeexpr_bicall_1(mallocname, tp_anyptr, ex2);
+    if (newdelete) {
+	ex2 = makeexpr_cast(makeexpr_bin(EK_NEW, tp_anyptr,
+					 makeexpr_type(tp_abyte),
+					 ex2),
+			    type);
+    } else
+	ex2 = makeexpr_bicall_1(mallocname, tp_anyptr, ex2);
     sp = makestmt_assign(copyexpr(vex), ex2);
     if (malloccheck) {
         sp = makestmt_seq(sp, makestmt_if(makeexpr_rel(EK_EQ, copyexpr(vex), makeexpr_nil()),
@@ -2075,6 +2191,18 @@ Expr *ex;
     return makestmt_call(makeexpr_bicall_2("gotoxy", tp_void,
                                            makeexpr_arglong(ex->args[0], 0),
                                            makeexpr_arglong(ex->args[1], 0)));
+}
+
+
+
+Static Stmt *proc_halt()
+{
+    if (which_lang == LANG_TIP) {
+	return makestmt_call(makeexpr_bicall_1("exit", tp_void,
+					       makeexpr_name("EXIT_FAILURE",
+							     tp_integer)));
+    } else
+	return proc_escape();
 }
 
 
@@ -2317,6 +2445,16 @@ Static Expr *func_uint()
 Static Stmt *proc_leave()
 {
     return makestmt(SK_BREAK);
+}
+
+
+
+Static Expr *func_lint()
+{
+    Expr *ex;
+
+    ex = p_parexpr(tp_integer);
+    return pascaltypecast(tp_integer, ex);
 }
 
 
@@ -2607,10 +2745,9 @@ Static Stmt *proc_move_fast()
 
 Static Stmt *proc_new()
 {
-    Expr *ex, *ex2;
+    Expr *ex;
     Stmt *sp, **spp;
     Type *type;
-    char *name, *name2 = NULL, vbuf[1000];
 
     if (!skipopenparen())
 	return NULL;
@@ -2618,7 +2755,54 @@ Static Stmt *proc_new()
     type = ex->val.type;
     if (type->kind == TK_POINTER)
 	type = type->basetype;
-    parse_special_variant(type, vbuf);
+    sp = makestmt_call(handle_new(ex));
+    spp = &sp->next;
+    if (type->kind == TK_RECORD)
+	initfilevars(type->fbase, &spp, makeexpr_hat(ex, 0));
+    else if (isfiletype(type, -1))
+	sp = makestmt_seq(sp, makestmt_call(initfilevar(makeexpr_hat(ex, 0))));
+    else
+	freeexpr(ex);
+    return sp;
+}
+
+
+Static Expr *func_new_turbo()
+{
+    Meaning *tvar;
+    Expr *ex;
+
+    if (!skipopenparen())
+	return NULL;
+    if (!wexpecttok(TOK_IDENT))
+	return NULL;
+    if (!curtokmeaning || curtokmeaning->kind != MK_TYPE)
+	wexpected("a type name");
+    tvar = makestmttempvar(curtokmeaning->type, name_TEMP);
+    ex = makeexpr_var(tvar);
+    gettok();
+    ex = handle_new(ex);
+    if (ex->kind == EK_ASSIGN && ex->args[0]->kind == EK_VAR)
+	return ex->args[1];
+    else
+	return makeexpr_comma(ex, makeexpr_var(tvar));
+}
+
+
+Static Expr *handle_new(ex)
+Expr *ex;
+{
+    Expr *ex2, *init = NULL;
+    Type *type;
+    char *name, *name2 = NULL, vbuf[1000];
+
+    type = ex->val.type;
+    if (type->kind == TK_POINTER)
+	type = type->basetype;
+    if (type->kind == TK_RECORD && type->issigned)
+	init = parse_constructor(type, ex);
+    else
+	parse_special_variant(type, vbuf);
     skipcloseparen();
     name = find_special_variant(vbuf, NULL, specialmallocs, 3);
     if (!name) {
@@ -2636,28 +2820,30 @@ Static Stmt *proc_new()
 	ex2 = makeexpr_bicall_0(name, ex->val.type);
     } else if (name2) {
 	ex2 = makeexpr_bicall_1(mallocname, tp_anyptr, pc_expr_str(name2));
+    } else if (usenewdelete(ex->val.type)) {
+	if (type->kind == TK_ARRAY || type->kind == TK_SET ||
+	    type->kind == TK_STRING)
+	    ex2 = makeexpr_bin(EK_NEW, makepointertype(type),
+			       makeexpr_type(type->basetype),
+			       arraysize(type, 1));
+	else
+	    ex2 = makeexpr_un(EK_NEW, makepointertype(type),
+			      makeexpr_type(type));
     } else {
 	ex2 = makeexpr_bicall_1(mallocname, tp_anyptr,
 				makeexpr_sizeof(makeexpr_type(type), 1));
     }
-    sp = makestmt_assign(copyexpr(ex), ex2);
+    ex2 = makeexpr_assign(copyexpr(ex), ex2);
     if (malloccheck) {
-        sp = makestmt_seq(sp, makestmt_if(makeexpr_rel(EK_EQ,
-						       copyexpr(ex),
-						       makeexpr_nil()),
-                                          makestmt_call(makeexpr_bicall_0(name_OUTMEM, tp_int)),
-                                          NULL));
+        ex2 = makeexpr_comma(ex2, makeexpr_cond(makeexpr_rel(EK_EQ,
+							     copyexpr(ex),
+							     makeexpr_nil()),
+						makeexpr_bicall_0(name_OUTMEM, tp_int),
+						makeexpr_long(0)));
     }
-    spp = &sp->next;
-    while (*spp)
-	spp = &(*spp)->next;
-    if (type->kind == TK_RECORD)
-	initfilevars(type->fbase, &spp, makeexpr_hat(ex, 0));
-    else if (isfiletype(type, -1))
-	sp = makestmt_seq(sp, makestmt_call(initfilevar(makeexpr_hat(ex, 0))));
-    else
-	freeexpr(ex);
-    return sp;
+    if (init)
+	ex2 = makeexpr_comma(ex2, init);
+    return ex2;
 }
 
 
@@ -2667,7 +2853,7 @@ Static Expr *func_oct()
     return handle_vax_hex(NULL, "o", 3);
 }
 
-
+ 
 
 Static Expr *func_octal(ex)
 Expr *ex;
@@ -2696,6 +2882,33 @@ Expr *ex;
         return makeexpr_bicall_1(oddname, tp_boolean, ex);
     else
         return makeexpr_bin(EK_BAND, tp_boolean, ex, makeexpr_long(1));
+}
+
+
+
+Static Expr *func_ofs()
+{
+    Expr *ex;
+
+    ex = p_parexpr(tp_cproc);
+    if (ex->val.type->kind == TK_CPROCPTR) {
+	ex = makeexpr_cast(ex, tp_anyptr);
+    } else
+	ex = makeexpr_addrf(ex);
+    return makeexpr_bicall_1(OFSname, tp_ushort, ex);
+}
+
+
+Static Expr *func_seg()
+{
+    Expr *ex;
+
+    ex = p_parexpr(tp_cproc);
+    if (ex->val.type->kind == TK_CPROCPTR) {
+	ex = makeexpr_cast(ex, tp_anyptr);
+    } else
+	ex = makeexpr_addrf(ex);
+    return makeexpr_bicall_1(SEGname, tp_ushort, ex);
 }
 
 
@@ -2821,9 +3034,8 @@ Static Stmt *proc_page()
                                makeexpr_string("\f"));
     }
     if (FCheck(checkfilewrite)) {
-        ex = makeexpr_bicall_2("~SETIO", tp_void,
-                               makeexpr_rel(EK_GE, ex, makeexpr_long(0)),
-			       makeexpr_name(filewriteerrorname, tp_int));
+        ex = makeexpr_SETIO(makeexpr_rel(EK_GE, ex, makeexpr_long(0)),
+			    filewriteerrorname, fex);
     }
     return wrapopencheck(makestmt_call(ex), fex);
 }
@@ -3019,9 +3231,8 @@ Expr *fex, *ex;
                                1),
                            ex2);
     if (FCheck(checkfileseek)) {
-        ex = makeexpr_bicall_2("~SETIO", tp_void,
-                               makeexpr_rel(EK_EQ, ex, makeexpr_long(0)),
-			       makeexpr_name(endoffilename, tp_int));
+        ex = makeexpr_SETIO(makeexpr_rel(EK_EQ, ex, makeexpr_long(0)),
+			    endoffilename, fex);
     }
     return makestmt_call(ex);
 }
@@ -3066,11 +3277,11 @@ Expr *fex;
                                                            makegetchar(fex)));
                         if (checkeof(fex)) {
                             sp2 = makestmt_seq(sp2,
-                                makestmt_call(makeexpr_bicall_2("~SETIO", tp_void,
-                                                                makeexpr_rel(EK_NE,
-                                                                             ex,
-                                                                             makeexpr_name("EOF", tp_char)),
-								makeexpr_name(endoffilename, tp_int))));
+                                makestmt_call(makeexpr_SETIO(makeexpr_rel(EK_NE,
+									  ex,
+									  makeexpr_name("EOF", tp_char)),
+							     endoffilename,
+							     fex)));
                         } else
                             freeexpr(ex);
                     }
@@ -3097,17 +3308,16 @@ Expr *fex;
 				   makeexpr_name(badinputformatname, tp_int));
             else
 		ex = makeexpr_name(badinputformatname, tp_int);
-            sp->exp1 = makeexpr_bicall_2("~SETIO", tp_void,
-                                         makeexpr_rel(EK_EQ,
-                                                      sp->exp1,
-                                                      makeexpr_long(nargs)),
-                                         ex);
+            sp->exp1 = makeexpr_SETIO(makeexpr_rel(EK_EQ,
+						   sp->exp1,
+						   makeexpr_long(nargs)),
+				      NULL, makeexpr_bicall_2("Z", tp_int,
+							      ex, fex));
         } else if (checkeof(fex) && !isstrread) {
-            sp->exp1 = makeexpr_bicall_2("~SETIO", tp_void,
-                                         makeexpr_rel(EK_NE,
-                                                      sp->exp1,
-                                                      makeexpr_name("EOF", tp_int)),
-					 makeexpr_name(endoffilename, tp_int));
+            sp->exp1 = makeexpr_SETIO(makeexpr_rel(EK_NE,
+						   sp->exp1,
+						   makeexpr_name("EOF", tp_int)),
+				      endoffilename, fex);
         }
     }
     return sp;
@@ -3125,9 +3335,8 @@ Expr *vex, *lex, *fex;
                            lex,
                            filebasename(copyexpr(fex)));
     if (checkeof(fex)) {
-        ex = makeexpr_bicall_2("~SETIO", tp_void,
-                               makeexpr_rel(EK_NE, ex, makeexpr_nil()),
-			       makeexpr_name(endoffilename, tp_int));
+        ex = makeexpr_SETIO(makeexpr_rel(EK_NE, ex, makeexpr_nil()),
+			    endoffilename, fex);
     }
     return ex;
 }
@@ -3147,11 +3356,10 @@ Expr *fex;
                                        filebasename(fex)));
     } else if (!strcmp(readlnname, "scanf") || !*readlnname) {
         if (checkeof(fex))
-            ex = makeexpr_bicall_2("~SETIO", tp_void,
-                                   makeexpr_rel(EK_NE,
-                                                makegetchar(fex),
-                                                makeexpr_name("EOF", tp_char)),
-				   makeexpr_name(endoffilename, tp_int));
+            ex = makeexpr_SETIO(makeexpr_rel(EK_NE,
+					     makegetchar(fex),
+					     makeexpr_name("EOF", tp_char)),
+				endoffilename, fex);
         else
             ex = makegetchar(fex);
         return makestmt_seq(fixscanf(
@@ -3280,18 +3488,19 @@ int isreadln;
 		    fmt = "d";
 		    if (curtok == TOK_COLON) {
 			gettok();
-			if (curtok == TOK_IDENT &&
-			    !strcicmp(curtokbuf, "HEX")) {
-			    fmt = "x";
-			} else if (curtok == TOK_IDENT &&
-			    !strcicmp(curtokbuf, "OCT")) {
-			    fmt = "o";
-			} else if (curtok == TOK_IDENT &&
-			    !strcicmp(curtokbuf, "BIN")) {
-			    fmt = "b";
-			    note("Using %b for binary format in scanf [194]");
-			} else
-			    warning("Unrecognized format specified in READ [212]");
+		    }
+		    if (curtok == TOK_IDENT &&
+			!strcicmp(curtokbuf, "HEX")) {
+			fmt = "x";
+			gettok();
+		    } else if (curtok == TOK_IDENT &&
+			       !strcicmp(curtokbuf, "OCT")) {
+			fmt = "o";
+			gettok();
+		    } else if (curtok == TOK_IDENT &&
+			       !strcicmp(curtokbuf, "BIN")) {
+			fmt = "b";
+			note("Using %b for binary format in scanf [194]");
 			gettok();
 		    }
                     type = findbasetype(var->val.type, ODECL_NOPRES);
@@ -3348,10 +3557,17 @@ int isreadln;
                     break;
 
                 case TK_REAL:
-		    if (var->val.type == tp_longreal)
-			ex = makeexpr_string("%lg");
-		    else
-			ex = makeexpr_string("%g");
+		    if (!*floatscanfcode)
+			strcpy(floatscanfcode, "%g");
+		    if (var->val.type == tp_longreal &&
+			(strlen(floatscanfcode) == 2)) {
+			char buf[4];
+			strcpy(buf, ".l.");
+			buf[0] = floatscanfcode[0];
+			buf[2] = floatscanfcode[1];
+			ex = makeexpr_string(buf);
+		    } else
+			ex = makeexpr_string(floatscanfcode);
                     break;
 
                 case TK_STRING:     /* strread only */
@@ -3450,9 +3666,8 @@ Expr *fex, *var;
                                                     makeexpr_long(1),
                                                     filebasename(copyexpr(fex)));
         if (checkeof(fex)) {
-            ex = makeexpr_bicall_2("~SETIO", tp_void,
-                                   makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
-				   makeexpr_name(endoffilename, tp_int));
+            ex = makeexpr_SETIO(makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
+				endoffilename, fex);
         }
         sp = makestmt_seq(sp, makestmt_call(ex));
         if (curtok == TOK_COMMA) {
@@ -3475,16 +3690,23 @@ Static Stmt *proc_read()
     if (!skipopenparen())
 	return NULL;
     ex = p_expr(NULL);
+    sp = NULL;
     if (isfiletype(ex->val.type, -1) && wneedtok(TOK_COMMA)) {
         fex = ex;
+	if (israndomfile(fex->val.type)) {
+	    ex = p_expr(tp_integer);
+	    sp = doseek(fex, ex);
+	    if (!skipcomma())
+		return sp;
+	}
         ex = p_expr(NULL);
     } else {
         fex = makeexpr_var(mp_input);
     }
     if (fex->val.type == tp_text || fex->val.type == tp_bigtext)
-        sp = handleread_text(fex, ex, 0);
+        sp = makestmt_seq(sp, handleread_text(fex, ex, 0));
     else
-        sp = handleread_bin(fex, ex);
+        sp = makestmt_seq(sp, handleread_bin(fex, ex));
     skipcloseparen();
     return wrapopencheck(sp, fex);
 }
@@ -3503,7 +3725,7 @@ Static Stmt *proc_readdir()
 	return NULL;
     ex = p_expr(tp_integer);
     sp = doseek(fex, ex);
-    if (!skipopenparen())
+    if (!skipcomma())
 	return sp;
     sp = makestmt_seq(sp, handleread_bin(fex, p_expr(NULL)));
     skipcloseparen();
@@ -3819,8 +4041,8 @@ Static Expr *func_seekeof()
         ex = p_parexpr(tp_text);
     else
         ex = makeexpr_var(mp_input);
-    if (*skipspacename)
-        ex = makeexpr_bicall_1(skipspacename, tp_text, filebasename(ex));
+    if (*skipnlspacename)
+        ex = makeexpr_bicall_1(skipnlspacename, tp_text, filebasename(ex));
     else
         note("SEEKEOF was used [198]");
     return iofunc(ex, 0);
@@ -3843,6 +4065,24 @@ Static Expr *func_seekeoln()
     return iofunc(ex, 1);
 }
 
+
+
+Static Expr *func_self()
+{
+    Expr *ex;
+    Type *type;
+
+    if (curctx && curctx->kind == MK_FUNCTION && curctx->rectype) {
+	type = curctx->rectype;
+    } else {
+	type = tp_integer;
+	warning("Reference to SELF outside of member function [330]");
+    }
+    ex = makeexpr_name("this", makepointertype(type));
+    if (turboobjects)
+	ex = makeexpr_hat(ex, 0);
+    return ex;
+}
 
 
 Static Stmt *proc_setstrlen()
@@ -3916,8 +4156,23 @@ Static Expr *func_sizeof()
     if (curtok == TOK_IDENT && curtokmeaning && curtokmeaning->kind == MK_TYPE) {
         ex = makeexpr_type(curtokmeaning->type);
         gettok();
-    } else
+    } else {
         ex = p_expr(NULL);
+	if (ex->val.type->kind == TK_RECORD && ex->val.type->issigned &&
+	    ex->kind != EK_VAR) {
+	    Type *tp = ex->val.type;
+	    while (tp) {
+		Meaning *mp = ex->val.type->fbase;
+		while (mp && (mp->kind != MK_FUNCTION || !mp->bufferedfile))
+		    mp = mp->cnext;
+		if (mp)
+		    break;
+		tp = tp->basetype;
+	    }
+	    if (tp)
+		warning("SIZEOF called on virtual object type [335]");
+	}
+    }
     type = ex->val.type;
     parse_special_variant(type, vbuf);
     if (lpar)
@@ -4215,6 +4470,28 @@ Expr *ex;
 
 
 
+Static Expr *func_typeof()
+{
+    Expr *ex;
+    int lpar;
+
+    lpar = (curtok == TOK_LPAR);
+    if (lpar)
+	gettok();
+    if (curtok == TOK_IDENT && curtokmeaning && curtokmeaning->kind == MK_TYPE) {
+        ex = makeexpr_bicall_1("typeOfType", tp_anyptr,
+			       makeexpr_type(curtokmeaning->type));
+        gettok();
+    } else {
+        ex = makeexpr_bicall_1("typeOf", tp_anyptr, p_expr(NULL));
+    }
+    if (lpar)
+	skipcloseparen();
+    return ex;
+}
+
+
+
 Static Expr *func_utrunc(ex)
 Expr *ex;
 {
@@ -4234,6 +4511,39 @@ Static Expr *func_uand()
 	ex = makeexpr_bin(EK_BAND, ex->val.type, ex, p_expr(tp_unsigned));
 	skipcloseparen();
     }
+    return ex;
+}
+
+
+
+Static Expr *func_ub()
+{
+    Expr *ex, *ex2;
+    Type *type;
+
+    if (!skipopenparen())
+	return NULL;
+    ex = p_expr(tp_integer);
+    if (curtok == TOK_COMMA && skipcomma()) {
+	ex2 = p_ord_expr();
+	/* ignored for now */
+    }
+    skipcloseparen();
+    type = ex->val.type;
+    if (type->kind == TK_POINTER)
+	type = type->basetype;
+    if (type->kind == TK_ARRAY ||
+	type->kind == TK_SMALLARRAY) {
+	ex = copyexpr(type->indextype->smax);
+    } else if (type->kind == TK_STRING) {
+	ex = strmax_func(ex);
+	/* ex = makeexpr_minus(makeexpr_bicall_1("sizeof", tp_integer, ex),
+			       makeexpr_long(1)); */
+    } else {
+	warning("UB requires an array name parameter [210]");
+	ex = makeexpr_bicall_1("UB", tp_int, ex);
+    }
+    expr_reference(ex);
     return ex;
 }
 
@@ -4402,6 +4712,7 @@ Type *tp;
     Meaning *mp;
     int saveindent;
 
+    tp = ord_type(tp);
     for (sp = enumnames; sp && sp->value != (long)tp; sp = sp->next) ;
     if (!sp) {
         if (tp->meaning)
@@ -4445,7 +4756,9 @@ int base;
     Type *type;
 
     ex = makeexpr_charcast(ex);
-    if (ex->val.type->kind == TK_POINTER) {
+    if (ex->val.type->kind == TK_POINTER &&
+	ex->val.type->basetype &&
+	ex->val.type->basetype->kind == TK_STRING) {
         ex = makeexpr_hat(ex, 0);   /* convert char *'s to strings */
         intwarning("writeelement", "got a char * instead of a string [214]");
     }
@@ -4618,6 +4931,14 @@ int base;
                                    makeexpr_addr(ex));
             break;
 
+	case TK_POINTER:
+	    ex = makeexpr_bicall_3("sprintf", tp_str255, vex,
+				   makeexpr_string(format_s("0x%%.8%sx",
+							    (sizeof_int < 32)
+							    ? "l" : "")),
+				   makeexpr_cast(ex, tp_integer));
+	    break;
+
         default:
             note("Element has wrong type for WRITE statement [196]");
             ex = makeexpr_bicall_2("sprintf", tp_str255, vex, makeexpr_string("<meef>"));
@@ -4760,9 +5081,8 @@ int iswriteln;
             }
         }
         if (FCheck(checkfilewrite)) {
-            print = makeexpr_bicall_2("~SETIO", tp_void,
-                                      makeexpr_rel(EK_GE, print, makeexpr_long(0)),
-				      makeexpr_name(filewriteerrorname, tp_int));
+            print = makeexpr_SETIO(makeexpr_rel(EK_GE, print, makeexpr_long(0)),
+				   filewriteerrorname, fex);
         }
     }
     return makestmt_call(print);
@@ -4798,9 +5118,8 @@ Expr *fex, *ex;
                                                      makeexpr_long(1),
 			                             filebasename(copyexpr(fex)));
         if (FCheck(checkfilewrite)) {
-            ex = makeexpr_bicall_2("~SETIO", tp_void,
-                                   makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
-				   makeexpr_name(filewriteerrorname, tp_int));
+            ex = makeexpr_SETIO(makeexpr_rel(EK_EQ, ex, makeexpr_long(1)),
+				filewriteerrorname, fex);
         }
         sp = makestmt_seq(sp, makestmt_call(ex));
         if (curtok == TOK_COMMA) {
@@ -4823,16 +5142,23 @@ Static Stmt *proc_write()
     if (!skipopenparen())
 	return NULL;
     ex = p_expr(NULL);
+    sp = NULL;
     if (isfiletype(ex->val.type, -1) && wneedtok(TOK_COMMA)) {
         fex = ex;
+	if (israndomfile(fex->val.type)) {
+	    ex = p_expr(tp_integer);
+	    sp = doseek(fex, ex);
+	    if (!skipcomma())
+		return sp;
+	}
         ex = p_expr(NULL);
     } else {
         fex = makeexpr_var(mp_output);
     }
     if (fex->val.type == tp_text || fex->val.type == tp_bigtext)
-        sp = handlewrite_text(fex, ex, 0);
+        sp = makestmt_seq(sp, handlewrite_text(fex, ex, 0));
     else
-        sp = handlewrite_bin(fex, ex);
+        sp = makestmt_seq(sp, handlewrite_bin(fex, ex));
     skipcloseparen();
     return wrapopencheck(sp, fex);
 }
@@ -5199,8 +5525,10 @@ mp_dec_dec =
     makespecialfunc( "IADDRESS",      func_iaddress);
     makespecialfunc( "INT",           func_int);         
     makespecialfunc( "LAND",	      func_uand);
+    makespecialfunc( "LINT",	      func_lint);
     makespecialfunc( "LNOT",	      func_unot);
     makespecialfunc( "LO",            func_lo);
+    makespecialfunc( "LOCATION",      func_addr);
     makespecialfunc( "LOOPHOLE",      func_loophole);
     makespecialfunc( "LOR",	      func_uor);
     makespecialfunc( "LOWER",	      func_lower);
@@ -5211,8 +5539,11 @@ mp_dec_dec =
     makespecialfunc( "MAX",	      func_max);
     makespecialfunc( "MAXPOS",        func_maxpos);
     makespecialfunc( "MIN",	      func_min);
+mp_new_turbo =
+    makespecialfunc( "NEW_TURBO",     func_new_turbo);
     makespecialfunc( "NEXT",          func_sizeof);
     makespecialfunc( "OCT",           func_oct);
+    makespecialfunc( "OFS",           func_ofs);
     makespecialfunc( "ORD",           func_ord);
     makespecialfunc( "ORD4",          func_ord4);
     makespecialfunc( "PI",	      func_pi);
@@ -5224,6 +5555,9 @@ mp_dec_dec =
     makespecialfunc( "SCAN",	      func_scan);
     makespecialfunc( "SEEKEOF",       func_seekeof);
     makespecialfunc( "SEEKEOLN",      func_seekeoln);
+    makespecialfunc( "SEG",           func_seg);
+mp_self_func =
+    makespecialfunc( "SELF",          func_self);
     makespecialfunc( "SIZE",          func_sizeof);
     makespecialfunc( "SIZEOF",        func_sizeof);
     makespecialfunc( "SNGL",          func_sngl);
@@ -5231,7 +5565,9 @@ mp_dec_dec =
     makespecialfunc( "STATUSV",	      func_statusv);
     makespecialfunc( "SUCC",          func_succ);
     makespecialfunc( "TSIZE",         func_sizeof);
+    makespecialfunc( "TYPEOF",        func_typeof);
     makespecialfunc( "UAND",	      func_uand);
+    makespecialfunc( "UB",            func_ub);
     makespecialfunc( "UDEC",          func_udec);
     makespecialfunc( "UINT",          func_uint);         
     makespecialfunc( "UNOT",	      func_unot);
@@ -5261,6 +5597,8 @@ mp_val_modula =
     makestandardfunc("LN",            func_ln);          
     makestandardfunc("LOG",           func_log);
     makestandardfunc("LOG10",         func_log);
+    makestandardfunc("LROUND",        func_round);       
+    makestandardfunc("LTRUNC",        func_trunc);       
     makestandardfunc("MAXAVAIL",      func_maxavail);
     makestandardfunc("MEMAVAIL",      func_memavail);
     makestandardfunc("OCTAL",         func_octal);       
@@ -5316,10 +5654,11 @@ mp_dec_turbo =
     makespecialproc( "ESCAPE",        proc_escape);
     makespecialproc( "EXCL",          proc_excl);
     makespecialproc( "EXIT",          proc_exit);
+    makespecialproc( "EXTEND",        proc_append);
     makespecialproc( "FILLCHAR",      proc_fillchar);
     makespecialproc( "FLUSH",         proc_flush);
     makespecialproc( "GET",           proc_get);
-    makespecialproc( "HALT",          proc_escape);
+    makespecialproc( "HALT",          proc_halt);
     makespecialproc( "INC",           proc_inc);
     makespecialproc( "INCL",          proc_incl);
     makespecialproc( "LEAVE",	      proc_leave);
@@ -5328,6 +5667,7 @@ mp_dec_turbo =
     makespecialproc( "MOVE_FAST",     proc_move_fast);        
     makespecialproc( "MOVE_L_TO_R",   proc_move_fast);        
     makespecialproc( "MOVE_R_TO_L",   proc_move_fast);        
+mp_new_normal =
     makespecialproc( "NEW",           proc_new);
     if (which_lang != LANG_VAX)
 	makespecialproc( "OPEN",      proc_open);
@@ -5344,6 +5684,7 @@ mp_dec_turbo =
     makespecialproc( "RESET",         proc_reset);
     makespecialproc( "REWRITE",       proc_rewrite);
     makespecialproc( "SEEK",          proc_seek);
+    makespecialproc( "SETNAME",       proc_assign);
     makespecialproc( "SETSTRLEN",     proc_setstrlen);
     makespecialproc( "SETTEXTBUF",    proc_settextbuf);
 mp_str_turbo =
@@ -5363,7 +5704,8 @@ mp_str_turbo =
 mp_val_turbo =
     makespecialproc( "VAL_TURBO",     proc_val_turbo);
 
-    makestandardproc("DELETE",        proc_delete);      
+    if (which_lang != LANG_VAX)
+	makestandardproc("DELETE",        proc_delete);      
     makestandardproc("FREEMEM",       proc_freemem);     
     makestandardproc("GETMEM",        proc_getmem);
     makestandardproc("GOTOXY",        proc_gotoxy);      

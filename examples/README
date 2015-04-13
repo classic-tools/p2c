@@ -1,12 +1,13 @@
 
 This directory contains examples for "p2c", a Pascal to C translator.
 
-"p2c"  Copyright 1989, 1990, 1991  Free Software Foundation, Inc.
+"p2c"  Copyright 1989, 1990, 1991, 1992, 1993  Free Software Foundation, Inc.
 
 Written and maintained by:   Dave Gillespie
-			     256-80 Caltech
-			     Pasadena CA 91125
-			     daveg@csvax.cs.caltech.edu, cit-vax!daveg
+			     c/o Synaptics, Inc.
+			     2698 Orchard Parkway
+			     San Jose CA 95134
+			     daveg@synaptics.com, uunet!synaptx!daveg
 
 
 

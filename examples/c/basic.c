@@ -1,5 +1,5 @@
-/* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/basic.p" */
+/* Output from p2c --VERSION--, the Pascal-to-C translator */
+/* From input file "examples/basic.p" */
 
 
 /*$ debug$*/
@@ -282,8 +282,8 @@ double n;
   if (n != 0 && fabs(n) < 1e-2 || fabs(n) >= 1e12) {
     sprintf(s, "% .5E", n);
     i = strlen(s) + 1;
-    s[i - 1] = '\0';
-/* p2c: dist/examples/basic.p, line 237:
+    s[i-1] = '\0';
+/* p2c: examples/basic.p, line 237:
  * Note: Modification of string length may translate incorrectly [146] */
     return strcpy(Result, s);
   } else {
@@ -291,11 +291,11 @@ double n;
     i = strlen(s) + 1;
     do {
       i--;
-    } while (s[i - 1] == '0');
-    if (s[i - 1] == '.')
+    } while (s[i-1] == '0');
+    if (s[i-1] == '.')
       i--;
     s[i] = '\0';
-/* p2c: dist/examples/basic.p, line 248:
+/* p2c: examples/basic.p, line 248:
  * Note: Modification of string length may translate incorrectly [146] */
     return strcpy(Result, strltrim(s));
   }
@@ -315,20 +315,20 @@ Static Void parse(inbuf, buf)
 Char *inbuf;
 tokenrec **buf;
 {
-  long i, j, k;
+  long i = 1;
+  long j, k;
   Char token[toklength + 1];
-  tokenrec *t, *tptr;
+  tokenrec *t;
+  tokenrec *tptr = NULL;
   varrec *v;
   Char ch;
   double n, d, d1;
 
-  tptr = NULL;
   *buf = NULL;
-  i = 1;
   do {
     ch = ' ';
     while (i <= strlen(inbuf) && ch == ' ') {
-      ch = inbuf[i - 1];
+      ch = inbuf[i-1];
       i++;
     }
     if (ch != ' ') {
@@ -347,13 +347,13 @@ tokenrec **buf;
 	t->UU.sp = (Char *)Malloc(256);
 	t->UU.sp[255] = '\0';
 	j = 0;
-	while (i <= strlen(inbuf) && inbuf[i - 1] != ch) {
+	while (i <= strlen(inbuf) && inbuf[i-1] != ch) {
 	  j++;
-	  t->UU.sp[j - 1] = inbuf[i - 1];
+	  t->UU.sp[j-1] = inbuf[i-1];
 	  i++;
 	}
 	t->UU.sp[j] = '\0';
-/* p2c: dist/examples/basic.p, line 415:
+/* p2c: examples/basic.p, line 415:
  * Note: Modification of string length may translate incorrectly [146] */
 	i++;
 	break;
@@ -409,10 +409,10 @@ tokenrec **buf;
 	break;
 
       case '<':
-	if (i <= strlen(inbuf) && inbuf[i - 1] == '=') {
+	if (i <= strlen(inbuf) && inbuf[i-1] == '=') {
 	  t->kind = tokle;
 	  i++;
-	} else if (i <= strlen(inbuf) && inbuf[i - 1] == '>') {
+	} else if (i <= strlen(inbuf) && inbuf[i-1] == '>') {
 	  t->kind = tokne;
 	  i++;
 	} else
@@ -420,7 +420,7 @@ tokenrec **buf;
 	break;
 
       case '>':
-	if (i <= strlen(inbuf) && inbuf[i - 1] == '=') {
+	if (i <= strlen(inbuf) && inbuf[i-1] == '=') {
 	  t->kind = tokge;
 	  i++;
 	} else
@@ -433,16 +433,16 @@ tokenrec **buf;
 	  j = 0;
 	  token[toklength] = '\0';
 	  while (i <= strlen(inbuf) &&
-		 (inbuf[i - 1] == '$' || inbuf[i - 1] == '_' ||
-		  isalnum(inbuf[i - 1]))) {
+		 (inbuf[i-1] == '$' || inbuf[i-1] == '_' ||
+		  isalnum(inbuf[i-1]))) {
 	    if (j < toklength) {
 	      j++;
-	      token[j - 1] = inbuf[i - 1];
+	      token[j-1] = inbuf[i-1];
 	    }
 	    i++;
 	  }
 	  token[j] = '\0';
-/* p2c: dist/examples/basic.p, line 309:
+/* p2c: examples/basic.p, line 309:
  * Note: Modification of string length may translate incorrectly [146] */
 	  if (!strcmp(token, "and") || !strcmp(token, "AND"))
 	    t->kind = tokand;
@@ -594,29 +594,27 @@ tokenrec **buf;
 	  d1 = 1.0;
 	  i--;
 	  while (i <= strlen(inbuf) &&
-		 (isdigit(inbuf[i - 1]) || inbuf[i - 1] == '.' && d1 == 1)) {
-	    if (inbuf[i - 1] == '.')
+		 (isdigit(inbuf[i-1]) || inbuf[i-1] == '.' && d1 == 1)) {
+	    if (inbuf[i-1] == '.')
 	      d1 = 10.0;
 	    else {
-	      n = n * 10 + inbuf[i - 1] - 48;
+	      n = n * 10 + inbuf[i-1] - 48;
 	      d *= d1;
 	    }
 	    i++;
 	  }
 	  n /= d;
-	  if (i <= strlen(inbuf) &&
-	      (inbuf[i - 1] == 'E' || inbuf[i - 1] == 'e')) {
+	  if (i <= strlen(inbuf) && (inbuf[i-1] == 'E' || inbuf[i-1] == 'e')) {
 	    i++;
 	    d1 = 10.0;
-	    if (i <= strlen(inbuf) &&
-		(inbuf[i - 1] == '-' || inbuf[i - 1] == '+')) {
-	      if (inbuf[i - 1] == '-')
+	    if (i <= strlen(inbuf) && (inbuf[i-1] == '-' || inbuf[i-1] == '+')) {
+	      if (inbuf[i-1] == '-')
 		d1 = 0.1;
 	      i++;
 	    }
 	    j = 0;
-	    while (i <= strlen(inbuf) && isdigit(inbuf[i - 1])) {
-	      j = j * 10 + inbuf[i - 1] - 48;
+	    while (i <= strlen(inbuf) && isdigit(inbuf[i-1])) {
+	      j = j * 10 + inbuf[i-1] - 48;
 	      i++;
 	    }
 	    for (k = 1; k <= j; k++)
@@ -641,10 +639,9 @@ Static Void listtokens(f, buf)
 FILE *f;
 tokenrec *buf;
 {
-  boolean ltr;
+  boolean ltr = false;
   Char STR1[256];
 
-  ltr = false;
   while (buf != NULL) {
     if ((long)buf->kind >= toknot && (long)buf->kind <= tokrenum ||
 	buf->kind == toknum || buf->kind == tokvar) {
@@ -984,7 +981,9 @@ tokenrec **tok;
 Static Void parseinput(buf)
 tokenrec **buf;
 {
-  linerec *l, *l0, *l1;
+  linerec *l;
+  linerec *l0 = NULL;
+  linerec *l1;
   Char STR1[256];
 
   strcpy(STR1, strltrim(inbuf));
@@ -998,7 +997,6 @@ tokenrec **buf;
   if (curline == 0)
     return;
   l = linebase;
-  l0 = NULL;
   while (l != NULL && l->num < curline) {
     l0 = l;
     l = l->next;
@@ -1207,7 +1205,7 @@ struct LOC_exec *LINK;
       skipparen(LINK);
       j *= 11;
       i++;
-      v->dims[i - 1] = 11;
+      v->dims[i-1] = 11;
     } while (LINK->t->kind != tokrp);
     v->numdims = i;
     if (v->stringvar) {
@@ -1226,9 +1224,9 @@ struct LOC_exec *LINK;
   FORLIM = v->numdims;
   for (i = 1; i <= FORLIM; i++) {
     j = intexpr(LINK);
-    if ((unsigned long)j >= v->dims[i - 1])
+    if ((unsigned long)j >= v->dims[i-1])
       badsubscr();
-    k = k * v->dims[i - 1] + j;
+    k = k * v->dims[i-1] + j;
     if (i < v->numdims)
       require(tokcomma, LINK);
   }
@@ -1427,12 +1425,10 @@ struct LOC_exec *LINK;
     break;
 
   case tokpeek:
-/* p2c: dist/examples/basic.p, line 1029:
- * Note: Range checking is OFF [216] */
+/* p2c: examples/basic.p, line 1029: Note: Range checking is OFF [216] */
     trick.i = intfactor(LINK);
     n.UU.val = *trick.c;
-/* p2c: dist/examples/basic.p, line 1032:
- * Note: Range checking is ON [216] */
+/* p2c: examples/basic.p, line 1032: Note: Range checking is ON [216] */
     break;
 
   default:
@@ -1485,7 +1481,7 @@ struct LOC_exec *LINK;
       tmerr();
     if (k == tokmod) {
       n.UU.val = (long)floor(n.UU.val + 0.5) % (long)floor(n2.UU.val + 0.5);
-/* p2c: dist/examples/basic.p, line 1078:
+/* p2c: examples/basic.p, line 1078:
  * Note: Using % for possibly-negative arguments [317] */
     } else if (k == toktimes)
       n.UU.val *= n2.UU.val;
@@ -1552,8 +1548,8 @@ struct LOC_exec *LINK;
 	  (strcmp(n.UU.sval, n2.UU.sval) > 0 && (unsigned long)k < 32 &&
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
-/* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+8.00 seconds, 5000 tries on line 1554 [251] */
+/* p2c: examples/basic.p, line 2175: Note:
+ * Line breaker spent 0.0+5.39 seconds, 5000 tries on line 1550 [251] */
       Free(n.UU.sval);
       Free(n2.UU.sval);
     } else
@@ -1566,8 +1562,8 @@ struct LOC_exec *LINK;
 	  (n.UU.val > n2.UU.val && (unsigned long)k < 32 &&
 	    ((1L << ((long)k)) & ((1L << ((long)tokgt)) |
 		  (1L << ((long)tokge)) | (1L << ((long)tokne)))) != 0));
-/* p2c: dist/examples/basic.p, line 2175: Note:
- * Line breaker spent 0.0+9.00 seconds, 5000 tries on line 1568 [251] */
+/* p2c: examples/basic.p, line 2175: Note:
+ * Line breaker spent 0.0+6.57 seconds, 5000 tries on line 1564 [251] */
     n.stringval = false;
     n.UU.val = f;
   }
@@ -1746,18 +1742,14 @@ struct LOC_exec *LINK;
   Char STR1[256];
   Char *TEMP;
 
-  f = NULL;
   if (!merging)
     cmdnew(LINK);
-  if (f != NULL) {
+  sprintf(STR1, "%s.TEXT", name);
+  f = fopen(STR1, "r");
+  if (f == NULL) {
     sprintf(STR1, "%s.TEXT", name);
-    f = freopen(STR1, "r", f);
-  } else {
-    sprintf(STR1, "%s.TEXT", name);
-    f = fopen(STR1, "r");
+    _EscIO2(FileNotFound, STR1);
   }
-  if (f == NULL)
-    _EscIO(FileNotFound);
   while (fgets(inbuf, 256, f) != NULL) {
     TEMP = strchr(inbuf, '\n');
     if (TEMP != NULL)
@@ -1768,11 +1760,7 @@ struct LOC_exec *LINK;
       disposetokens(&buf);
     }
   }
-  if (f != NULL)
-    fclose(f);
-  f = NULL;
-  if (f != NULL)
-    fclose(f);
+  fclose(f);
 }
 
 
@@ -1817,16 +1805,12 @@ struct LOC_exec *LINK;
   linerec *l;
   Char STR1[256], STR2[256];
 
-  f = NULL;
-  if (f != NULL) {
+  sprintf(STR2, "%s.TEXT", stringexpr(STR1, LINK));
+  f = fopen(STR2, "w");
+  if (f == NULL) {
     sprintf(STR2, "%s.TEXT", stringexpr(STR1, LINK));
-    f = freopen(STR2, "w", f);
-  } else {
-    sprintf(STR2, "%s.TEXT", stringexpr(STR1, LINK));
-    f = fopen(STR2, "w");
+    _EscIO2(FileNotFound, STR2);
   }
-  if (f == NULL)
-    _EscIO(FileNotFound);
   l = linebase;
   while (l != NULL) {
     fprintf(f, "%ld ", l->num);
@@ -1834,11 +1818,7 @@ struct LOC_exec *LINK;
     putc('\n', f);
     l = l->next;
   }
-  if (f != NULL)
-    fclose(f);
-  f = NULL;
-  if (f != NULL)
-    fclose(f);
+  fclose(f);
 }
 
 
@@ -1905,10 +1885,8 @@ struct LOC_exec *LINK;
 {
   linerec *l, *l1;
   tokenrec *tok;
-  long lnum, step;
+  long lnum = 10, step = 10;
 
-  lnum = 10;
-  step = 10;
   if (!iseos(LINK)) {
     lnum = intexpr(LINK);
     if (!iseos(LINK)) {
@@ -1961,11 +1939,10 @@ struct LOC_exec *LINK;
 Local Void cmdprint(LINK)
 struct LOC_exec *LINK;
 {
-  boolean semiflag;
+  boolean semiflag = false;
   valrec n;
   Char STR1[256];
 
-  semiflag = false;
   while (!iseos(LINK)) {
     semiflag = false;
     if ((unsigned long)LINK->t->kind < 32 &&
@@ -2128,11 +2105,10 @@ short up, dn;
 struct LOC_exec *LINK;
 {
   boolean Result;
-  long i;
+  long i = 0;
   linerec *saveline;
 
   saveline = stmtline;
-  i = 0;
   do {
     while (LINK->t == NULL) {
       if (stmtline == NULL || stmtline->next == NULL) {
@@ -2427,6 +2403,7 @@ struct LOC_exec *LINK;
 
   i = intexpr(LINK);
   require(tokcomma, LINK);
+  intexpr(LINK);
 }
 
 
@@ -2486,7 +2463,7 @@ struct LOC_exec *LINK;
       if (i >= maxdims)
 	badsubscr();
       i++;
-      v->dims[i - 1] = k;
+      v->dims[i-1] = k;
       j *= k;
       done = (LINK->t != NULL && LINK->t->kind == tokrp);
       if (!done)
@@ -2517,13 +2494,11 @@ struct LOC_exec *LINK;
     Char *c;
   } trick;
 
-/* p2c: dist/examples/basic.p, line 2073:
- * Note: Range checking is OFF [216] */
+/* p2c: examples/basic.p, line 2073: Note: Range checking is OFF [216] */
   trick.i = intexpr(LINK);
   require(tokcomma, LINK);
   *trick.c = (Char)intexpr(LINK);
-/* p2c: dist/examples/basic.p, line 2077:
- * Note: Range checking is ON [216] */
+/* p2c: examples/basic.p, line 2077: Note: Range checking is ON [216] */
 }
 
 

@@ -1,5 +1,5 @@
-/* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/fact.p" */
+/* Output from p2c --VERSION--, the Pascal-to-C translator */
+/* From input file "examples/fact.p" */
 
 
 #include <p2c/p2c.h>

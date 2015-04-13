@@ -1,8 +1,8 @@
 
 /* Run-time library for use with "p2c", the Pascal to C translator */
 
-/* "p2c"  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
- * By Dave Gillespie, daveg@csvax.cs.caltech.edu.  Version --VERSION--.
+/* "p2c"  Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+ * By Dave Gillespie, daveg@synaptics.com.  Version --VERSION--.
  * This file may be copied, modified, etc. in any way.  It is not restricted
  * by the licence agreement accompanying p2c itself.
  */
@@ -73,7 +73,11 @@ register int n;
 {
     register char *dd = (char *)d, *ss = (char *)s;
     if (dd < ss || dd - ss >= n) {
+#if defined(bcopy) && defined(memcpy)
+        my_memcpy(dd, ss, n);
+#else
 	memcpy(dd, ss, n);
+#endif
     } else if (n > 0) {
 	dd += n;
 	ss += n;
@@ -172,6 +176,44 @@ long a, b;
 	    v *= a;
     }
     return v;
+}
+
+
+long P_imax(a, b)
+long a, b;
+{
+    if (a > b)
+	return a;
+    else
+	return b;
+}
+
+long P_imin(a, b)
+long a, b;
+{
+    if (a < b)
+	return a;
+    else
+	return b;
+}
+
+
+double P_rmax(a, b)
+double a, b;
+{
+    if (a > b)
+	return a;
+    else
+	return b;
+}
+
+double P_rmin(a, b)
+double a, b;
+{
+    if (a < b)
+	return a;
+    else
+	return b;
 }
 
 
@@ -431,7 +473,11 @@ FILE *f;
 
     if (feof(f))
 	return 1;
+#ifdef HAVE_ISATTY
+    if (isatty(fileno(f)))
+#else
     if (f == stdin)
+#endif
 	return 0;    /* not safe to look-ahead on the keyboard! */
     ch = getc(f);
     if (ch == EOF)
@@ -453,6 +499,38 @@ FILE *f;
         return 1;
     ungetc(ch, f);
     return (ch == '\n');
+}
+
+
+/* Skip whitespace (including newlines) in a file. */
+
+FILE *_skipnlspaces(f)
+FILE *f;
+{
+  register int ch;
+
+  do {
+    ch = getc(f);
+  } while (ch == ' ' || ch == '\t' || ch == '\n');
+  if (ch != EOF)
+    ungetc(ch, f);
+  return f;
+}
+
+
+/* Skip whitespace (not including newlines) in a file. */
+
+FILE *_skipspaces(f)
+FILE *f;
+{
+  register int ch;
+
+  do {
+    ch = getc(f);
+  } while (ch == ' ' || ch == '\t');
+  if (ch != EOF)
+    ungetc(ch, f);
+  return f;
 }
 
 
@@ -1017,6 +1095,19 @@ int code;
     return _Escape(-10);
 }
 
+int _EscIO2(code, name)
+int code;
+char *name;
+{
+    P_ioresult = code;
+    if (!__top_jb && name && *name) {
+	char buf[100];
+	fprintf(stderr, "%s: %s\n",
+		name, _ShowEscape(buf, P_escapecode, P_ioresult, ""));
+	exit(EXIT_FAILURE);
+    }
+    return _Escape(-10);
+}
 
 
 

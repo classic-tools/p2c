@@ -1,7 +1,7 @@
-/* "p2c", a Pascal to C translator, version 1.20.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+/* "p2c", a Pascal to C translator, version 1.21alpha-07.Dec.93.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
    Author: Dave Gillespie.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -59,9 +59,9 @@ the Free Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #endif
 
 
-#ifdef __STDC__
-# include <stddef.h>
+#if defined(__STDC__) && !defined(M_XENIX)
 # include <stdlib.h>
+# include <stddef.h>
 # include <limits.h>
 #else
 # ifndef BSD
@@ -69,13 +69,7 @@ the Free Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #  include <memory.h>
 #  include <values.h>
 # endif
-# define EXIT_SUCCESS 0
-# define EXIT_FAILURE 1
-# define CHAR_BIT 8
-# define LONG_MAX (((unsigned long)~0L) >> 1)
-# define LONG_MIN (- LONG_MAX - 1)
 #endif
-
 
 
 #if defined(BSD) && !defined(__STDC__)
@@ -108,6 +102,16 @@ char *malloc(), *realloc();
 
 /* Constants */
 
+#ifndef CHAR_BIT
+# define CHAR_BIT 8
+#endif
+#ifndef LONG_MAX
+# define LONG_MAX (((unsigned long)~0L) >> 1)
+#endif
+#ifndef LONG_MIN
+# define LONG_MIN (- LONG_MAX - 1)
+#endif
+
 #undef MININT      /* we want the Pascal definitions, not the local C definitions */
 #undef MAXINT
 
@@ -135,7 +139,7 @@ char *p2c_home = P2C_HOME;
 extern char *p2c_home;
 #endif
 
-#define P2C_VERSION  "1.20"
+#define P2C_VERSION  "1.21alpha-07.Dec.93"
 
 
 
@@ -188,7 +192,8 @@ typedef enum E_token {
 
     /* Turbo Pascal tokens */
     TOK_SHL, TOK_SHR, TOK_XOR, TOK_INLINE, TOK_ABSOLUTE,
-    TOK_INTERRUPT, TOK_ADDR, TOK_HEXLIT,
+    TOK_INTERRUPT, TOK_ADDR, TOK_HEXLIT, TOK_OBJECT,
+    TOK_CONSTRUCTOR, TOK_DESTRUCTOR, TOK_VIRTUAL, TOK_PRIVATE,
 
     /* Oregon Software Pascal tokens */
     TOK_ORIGIN, TOK_INTFONLY,
@@ -203,6 +208,12 @@ typedef enum E_token {
 
     /* UCSD Pascal tokens */
     TOK_SEGMENT,
+
+    /* TIP tokens */
+    TOK_RANDOM, TOK_COMMON, TOK_ACCESS,
+
+    /* Object Pascal tokens */
+    TOK_INHERITED, TOK_OVERRIDE,
 
     TOK_LAST
 } Token;
@@ -235,7 +246,8 @@ char *toknames[(int)TOK_LAST] = { "",
     "OTHERWISE", "RECOVER", "TRY",
 
     "SHL", "SHR", "XOR", "INLINE", "ABSOLUTE",
-    "INTERRUPT", "an '@'", "a hex integer",
+    "INTERRUPT", "an '@'", "a hex integer", "OBJECT",
+    "CONSTRUCTOR", "DESTRUCTOR", "VIRTUAL", "PRIVATE",
 
     "ORIGIN", "INTF-ONLY",
 
@@ -245,7 +257,11 @@ char *toknames[(int)TOK_LAST] = { "",
     "BY", "DEFINITION", "ELSIF", "FROM", "LOOP",
     "POINTER", "QUALIFIED", "RETURN",
 
-    "SEGMENT"
+    "SEGMENT",
+
+    "RANDOM", "COMMON", "ACCESS",
+
+    "INHERITED", "OVERRIDE"
 } ;
 #else
 extern char *toknames[];
@@ -341,6 +357,8 @@ typedef struct S_symbol {
  *    mp->isfunction = 1 if should be declared extern.
  *    mp->namedfile = 1 if this file variable has a shadow file-name variable.
  *    mp->bufferedfile = 1 if this file variable has a shadow buffer variable.
+ *    mp->anyvarflag = 1 if this is an implicit-declared FOR loop variable.
+ *    mp->fakeparam = 1 if this has already been seen by findinits.
  *    mp->val.s => name format string if temporary var, else NULL.
  *
  * MK_VARREF:  Variable always referenced through a pointer.
@@ -367,6 +385,8 @@ typedef struct S_symbol {
  *    mp->isforward = 1 if tag field for following variant, else 0.
  *    mp->namedfile = 1 if this file field has a shadow file-name field.
  *    mp->bufferedfile = 1 if this file field has a shadow buffer field.
+ *    mp->isreturn = 1 if this is a private field in an object.
+ *    mp->fakeparam = 1 if this is a Turbo private field in an object.
  *
  * MK_VARIANT:  Header for variant record case.
  *    mp->ctx => First field in variant (unlike other meanings).
@@ -378,7 +398,7 @@ typedef struct S_symbol {
  * MK_LABEL:  Statement label.
  *    mp->val.i => Case number if used by non-local gotos, else -1.
  *    mp->xnext => MK_VAR representing associated jmp_buf variable.
- *    (All optional fields are unused.)
+ *    mp->isreturn = 1 if a TIP "escape" label.
  *
  * MK_FUNCTION:  Procedure or function.
  *    mp->type => TK_FUNCTION type.
@@ -392,6 +412,12 @@ typedef struct S_symbol {
  *    mp->varstructflag = 1 if function has a varstruct.
  *    mp->needvarstruct = 1 if no varstruct yet but may need one.
  *    mp->namedfile = 1 if function should be declared "inline".
+ *    mp->bufferedfile = 1 if function should be declared "virtual".
+ *    mp->rectype => Object type for member, NULL for regular function.
+ *    mp->xnext => True function object for member field, NULL otherwise.
+ *    mp->isreturn = 1 if this is a private member of an object.
+ *    mp->fakeparam = 1 if this is a Turbo private member of an object.
+ *    mp->val.s => "C" for constructors, "D" for destructors, else NULL.
  *
  * MK_SPECIAL:  Special, irregular built-in function.
  *    mp->handler => C function to parse and translate the special function.
@@ -478,7 +504,8 @@ typedef struct S_meaning {
              bufferedfile:1,   /* (above) */
              volatilequal:1,   /* Object has C "volatile" qualifier */
              constqual:1,      /* Object has C "const" qualifier */
-             dummy17:1, dummy18:1, dummy19:1, 
+             isref:1,          /* Is a C++ reference variable */
+             dummy18:1, dummy19:1, 
 	     dummy20:1, dummy21:1, dummy22:1, dummy23:1, dummy24:1, dummy25:1, 
 	     dummy26:1, dummy27:1, dummy28:1, dummy29:1, dummy30:1, dummy31:1;
     Value val;		       /* (above) */
@@ -545,6 +572,9 @@ typedef struct S_meaning {
  * TK_RECORD:  Pascal record/C struct type.
  *    tp->fbase => First field in record.
  *    tp->structdefd = 1 if struct type has been declared in output.
+ *    tp->issigned = 1 for Turbo Pascal object types, 0 for plain records.
+ *    tp->basetype = Base type of object, NULL for records and base objects.
+ *    tp->smin => EK_NAME for tag (used if tagged but tp->meaning == NULL).
  *
  * TK_ARRAY with smax == NULL:  Normal array type.
  *    tp->basetype => Element type of array.
@@ -576,16 +606,19 @@ typedef struct S_meaning {
  *
  * TK_FILE:  File type (corresponds to C "FILE" type).
  *    tp->basetype => Type of file elements, or tp_abyte if UCSD untyped file.
+ *    tp->issigned = 1 if RANDOM file.
  *    A Pascal "file" variable is represented as a TK_POINTER to a TK_FILE.
  *
  * TK_BIGFILE:  File type with attached buffers and name.
  *    tp->basetype => Type of file elements, or tp_abyte if UCSD untyped file.
+ *    tp->issigned = 1 if RANDOM file.
  *    A Pascal "file" variable is represented directly as a TK_BIGFILE.
  *
  * TK_FUNCTION:  Procedure or procedure-pointer type.
  *    tp->basetype => Return type of function, or tp_void if procedure.
  *    tp->issigned = 1 if type has a generic static link.
  *    tp->fbase => First argument (or StructFunction return buffer pointer).
+ *    tp->smin => EK_NAME of declared type name of return value, else NULL.
  *
  * TK_PROCPTR:  Procedure pointer with static link.
  *    tp->basetype => TK_FUNCTION type.
@@ -776,6 +809,7 @@ typedef struct S_type {
  * EK_SPCALL:  Special function call.
  *    ep->nargs = 1 + number of arguments to function.
  *    ep->args[0] => Expression which is the function to call.
+ *    ep->val.i = 1 if force non-starfunctions, 0 if not.
  *
  * EK_TYPENAME:  Type name.
  *    ep->nargs = 0.
@@ -783,6 +817,15 @@ typedef struct S_type {
  *
  * EK_FUNCTION:  Normal function call.
  *    ep->val.i => MK_FUNCTION being called (cast to Meaning *).
+ *
+ * EK_NEW:  C++ "new" operator.
+ *    ep->nargs = 1 or 2.
+ *    ep->args[0] => EK_TYPENAME for type to allocated.
+ *    ep->args[1] => Array bound.
+ *
+ * EK_DELETE:  C++ "delete" operator.
+ *    ep->nargs = 1.
+ *    ep->args[0] => Variable to be freed.
  *
  */
 
@@ -798,7 +841,7 @@ enum exprkind {
     EK_ASSIGN, EK_POSTINC, EK_POSTDEC, EK_CHECKNIL,
     EK_MACARG, EK_BICALL, EK_STRUCTCONST, EK_STRUCTOF,
     EK_COMMA, EK_LONGCONST, EK_NAME, EK_CTX, EK_SPCALL,
-    EK_LITCAST, EK_TYPENAME,
+    EK_LITCAST, EK_TYPENAME, EK_NEW, EK_DELETE,
     EK_LAST
 } ;
 
@@ -815,7 +858,7 @@ char *exprkindnames[(int)EK_LAST] = {
     "EK_ASSIGN", "EK_POSTINC", "EK_POSTDEC", "EK_CHECKNIL",
     "EK_MACARG", "EK_BICALL", "EK_STRUCTCONST", "EK_STRUCTOF",
     "EK_COMMA", "EK_LONGCONST", "EK_NAME", "EK_CTX", "EK_SPCALL",
-    "EK_LITCAST", "EK_TYPENAME"
+    "EK_LITCAST", "EK_TYPENAME", "EK_NEW", "EK_DELETE"
 } ;
 #endif /*DEFDUMPS*/
 
@@ -835,6 +878,7 @@ typedef struct S_expr {
  *
  * SK_ASSIGN:  Assignment or function call (C expression statement).
  *    sp->exp1 => Expression to be evaluated.
+ *    sp->doinit = 1 if an EK_ASSIGN which should declare its lhs variable.
  *
  * SK_RETURN:  C "return" statement.
  *    sp->exp1 => Value to return, else NULL.
@@ -863,6 +907,7 @@ typedef struct S_expr {
  *    sp->exp2 => Conditional expression (may be NULL).
  *    sp->exp3 => Iteration expression (may be NULL).
  *    sp->stm1 => Loop body.
+ *    sp->doinit = 1 if exp1 should be written as a declaration.
  *
  * SK_REPEAT:  C "do-while" statement.
  *    sp->exp1 => Conditional expression (True = continue loop).
@@ -921,7 +966,8 @@ typedef struct S_stmt {
     enum stmtkind kind;
     struct S_stmt *next, *stm1, *stm2;
     struct S_expr *exp1, *exp2, *exp3;
-    long serial;
+    long serial, trueprops, falseprops;
+    unsigned quietelim:1, doinit:1;
 } Stmt;
 
 
@@ -935,6 +981,18 @@ typedef struct S_stmt {
 #define ODECL_FORWARD       0x10
 #define ODECL_DECL	    0x20
 #define ODECL_NOPRES	    0x40
+#define ODECL_REF	    0x80
+#define ODECL_SPACE	    0x100
+#define ODECL_SPMRG	    0x200
+#define ODECL_ARRAYPTRS     0x400
+
+/* Flags for declarevar(): */
+
+#define VDECL_HEADER        0x1
+#define VDECL_BODY          0x2
+#define VDECL_TRAILER       0x4
+#define VDECL_ALL           (VDECL_HEADER|VDECL_BODY|VDECL_TRAILER)
+#define VDECL_VARSTRUCT     0x8
 
 
 /* Flags for fixexpr(): */
@@ -942,7 +1000,13 @@ typedef struct S_stmt {
 #define ENV_EXPR    0       /* return value needed */
 #define ENV_STMT    1       /* return value ignored */
 #define ENV_BOOL    2       /* boolean return value needed */
+#define ENV_LVALUE  3       /* used as an lvalue */
 
+
+/* Flags for dataflow(): */
+
+#define PROP_INVALID (-1)
+#define PROP_ZERO   0       /* variable is known to be zero */
 
 /* Flags for defmacro(): */
 #define MAC_VAR     0       /* VarMacro */
@@ -964,11 +1028,12 @@ typedef struct S_stmt {
 #define CMT_ONBEGIN 6       /* comment on "begin" of procedure */
 #define CMT_ONEND   7       /* comment on "end" of procedure */
 #define CMT_ONELSE  8       /* comment on "else" keyword */
+#define CMT_PREELSE 9       /* comment preceding "else" keyword */
 #define CMT_NOT     256     /* negation of above, for searches */
 
 #ifdef define_globals
 char *CMT_NAMES[] = { "DONE", "PRE", "POST", "3", "TRAIL", "5",
-                      "BEGIN", "END", "ELSE" };
+                      "BEGIN", "END", "ELSE", "PREELSE" };
 #else
 extern char *CMT_NAMES[];
 #endif
@@ -999,23 +1064,24 @@ extern enum {
 
 extern enum {
     LANG_HP, LANG_UCSD, LANG_TURBO, LANG_OREGON, LANG_VAX,
-    LANG_MODULA, LANG_MPW, LANG_BERK
+    LANG_MODULA, LANG_MPW, LANG_BERK, LANG_TIP, LANG_APOLLO
 } which_lang;
 
-extern short debug, tokentrace, quietmode, cmtdebug, copysource;
+extern short debug, tokentrace, quietmode, cmtdebug, flowdebug, copysource;
 extern int nobanner, showprogress, maxerrors;
 extern short hpux_lang, integer16, doublereals, pascalenumsize;
 extern short needsignedbyte, unsignedchar, importall;
 extern short nestedcomments, pascalsignif, pascalcasesens;
 extern short dollar_idents, ignorenonalpha, modula2;
+extern short lowpreclogicals, commonextern;
 extern short ansiC, cplus, signedchars, signedfield, signedshift;
 extern short hassignedchar, voidstar, symcase, ucconsts, csignif;
 extern short copystructs, usevextern, implementationmodules;
-extern short useAnyptrMacros, usePPMacros;
-extern short sprintf_value;
+extern short turboobjects, useAnyptrMacros, usePPMacros;
+extern short slashslash, sprintf_value, tagstructs;
 extern char codefnfmt[40], modulefnfmt[40], logfnfmt[40];
 extern char headerfnfmt[40], headerfnfmt2[40], includefnfmt[40];
-extern char selfincludefmt[40];
+extern char selfincludefmt[40], includeoutfnfmt[40];
 extern char constformat[40], moduleformat[40], functionformat[40];
 extern char varformat[40], fieldformat[40], typeformat[40];
 extern char enumformat[40], symbolformat[40];
@@ -1026,15 +1092,17 @@ extern char roundname[40], divname[40], modname[40], remname[40];
 extern char strposname[40], strcicmpname[40];
 extern char strsubname[40], strdeletename[40], strinsertname[40];
 extern char strmovename[40], strpadname[40];
+extern char OFSname[40], SEGname[40];
 extern char strltrimname[40], strrtrimname[40], strrptname[40];
 extern char absname[40], oddname[40], evenname[40], swapname[40];
 extern char mallocname[40], freename[40], freervaluename[40];
 extern char randrealname[40], randintname[40], randomizename[40];
 extern char skipspacename[40], readlnname[40], freopenname[40];
+extern char skipnlspacename[40];
 extern char eofname[40], eolnname[40], fileposname[40], maxposname[40];
 extern char setunionname[40], setintname[40], setdiffname[40];
 extern char setinname[40], setaddname[40], setaddrangename[40];
-extern char setremname[40];
+extern char setremname[40], floatscanfcode[40];
 extern char setequalname[40], subsetname[40], setxorname[40];
 extern char setcopyname[40], setexpandname[40], setpackname[40];
 extern char getbitsname[40], clrbitsname[40], putbitsname[40];
@@ -1049,14 +1117,14 @@ extern char storebitsname[40], signextname[40];
 extern char filenotfoundname[40], filenotopenname[40];
 extern char filewriteerrorname[40], badinputformatname[40], endoffilename[40];
 extern short strcpyleft;
-extern char language[40], target[40];
+extern char language[40], target[40], maintype[40];
 extern int sizeof_char, sizeof_short, sizeof_integer, sizeof_pointer, 
            sizeof_double, sizeof_float, sizeof_enum, sizeof_int, sizeof_long;
 extern short size_t_long;
 extern int setbits, defaultsetsize, seek_base, integerwidth, realwidth;
 extern short quoteincludes, expandincludes, collectnest;
 extern int phystabsize, intabsize, linewidth, maxlinewidth;
-extern int majorspace, minorspace, functionspace, minfuncspace;
+extern int majorspace, minorspace, declspace, functionspace, minfuncspace;
 extern int casespacing, caselimit;
 extern int returnlimit, breaklimit, continuelimit;
 extern short nullstmtline, shortcircuit, shortopt, usecommas, elseif;
@@ -1096,17 +1164,18 @@ extern short extraparens, breakparens, returnparens;
 extern short variablearrays, initpacstrings, stararrays;
 extern short spaceexprs, spacefuncs, spacecommas, implicitzero, starindex;
 extern int casetabs;
-extern short starfunctions, mixfields, alloczeronil, postincrement;
+extern short starfunctions, mixfields, newdelete, alloczeronil, postincrement;
 extern short mixvars, mixtypes, mixinits, nullcharconst, castnull, addindex;
-extern short highcharints, highcharbits, hasstaticlinks;
+extern short spacestars, highcharints, highcharbits, hasstaticlinks;
 extern short mainlocals, storefilenames, addrstdfiles, readwriteopen;
+extern short anonymousunions, callcasts;
 extern short charfiletext, messagestderr, literalfilesflag, structfilesflag;
 extern short printfonly, mixwritelns, usegets, newlinespace, binarymode;
 extern char openmode[40], filenamefilter[40];
 extern short atan2flag, div_po2, mod_po2, assumebits, assumesigns;
 extern short fullstrwrite, fullstrread, whilefgets, buildreads, buildwrites;
 extern short foldconsts, foldstrconsts, charconsts, useconsts, useundef;
-extern short elimdeadcode, offsetforloops, forevalorder;
+extern short elimdeadcode, analyzeflow, offsetforloops, forevalorder;
 extern short smallsetconst, bigsetconst, lelerange, unsignedtrick;
 extern short useisalpha, useisspace, usestrncmp;
 extern short casecheck, arraycheck, rangecheck, nilcheck, malloccheck;
@@ -1118,22 +1187,23 @@ extern short use_static, var_static, void_args, prototypes, fullprototyping;
 extern short procptrprototypes, promote_enums;
 extern short preservetypes, preservepointers, preservestrings;
 extern short castargs, castlongargs, promoteargs, fixpromotedargs;
-extern short varstrings, varfiles, copystructfuncs;
+extern short varstrings, varfiles, userefs, useinits, copystructfuncs;
 extern long skipindices;
 extern short stringleaders;
 extern int stringceiling, stringdefault, stringtrunclimit, longstringsize;
 extern short warnnames, warnmacros;
 extern Strlist *importfrom, *importdirs, *includedirs, *includefrom;
-extern Strlist *librfiles, *bufferedfiles, *unbufferedfiles;
+extern Strlist *librfiles, *bufferedfiles, *unbufferedfiles, *shellvars;
 extern Strlist *externwords, *cexternwords;
 extern Strlist *varmacros, *constmacros, *fieldmacros;
 extern Strlist *funcmacros, *funcmacroargs, *nameoflist;
 extern Strlist *specialmallocs, *specialfrees, *specialsizeofs;
 extern Strlist *initialcalls, *eatnotes, *literalfiles, *structfiles;
+extern Strlist *replacebefore, *replaceafter;
 
 extern char fixedcomment[40], permanentcomment[40], interfacecomment[40];
 extern char embedcomment[40],  skipcomment[40], noskipcomment[40];
-extern char signedcomment[40], unsignedcomment[40];
+extern char signedcomment[40], unsignedcomment[40], tagcomment[40];
 
 extern char name_RETV[40], name_STRMAX[40], name_LINK[40];
 extern char name_COPYPAR[40], name_TEMP[40], name_DUMMY[40];
@@ -1149,6 +1219,7 @@ extern char name_BOOLEAN[40], name_TRUE[40], name_FALSE[40], name_NULL[40];
 extern char name_ESCAPECODE[40], name_IORESULT[40];
 extern char name_ARGC[40], name_ARGV[40];
 extern char name_ESCAPE[40], name_ESCIO[40], name_CHKIO[40], name_SETIO[40];
+extern char name_ESCIO2[40];
 extern char name_OUTMEM[40], name_CASECHECK[40], name_NILCHECK[40];
 extern char name_FNSIZE[40], name_FNVAR[40];
 extern char alternatename1[40], alternatename2[40], alternatename[40];
@@ -1185,6 +1256,7 @@ struct rcstruct {
     'S', 'V', "NESTEDCOMMENTS",  (anyptr) &nestedcomments,   -1,
     'S', 'V', "IMPORTALL",       (anyptr) &importall,        -1,
     'S', 'V', "IMPLMODULES",     (anyptr) &implementationmodules, -1,
+    'S', 'V', "TURBOOBJECTS",    (anyptr) &turboobjects,     -1,
     'A', 'V', "EXTERNWORDS",	 (anyptr) &externwords,	      0,
     'A', 'V', "CEXTERNWORDS",	 (anyptr) &cexternwords,      0,
     'S', 'V', "PASCALSIGNIF",    (anyptr) &pascalsignif,     -1,
@@ -1192,7 +1264,10 @@ struct rcstruct {
     'S', 'V', "DOLLARIDENTS",    (anyptr) &dollar_idents,    -1,
     'S', 'V', "IGNORENONALPHA",  (anyptr) &ignorenonalpha,   -1,
     'I', 'V', "SEEKBASE",        (anyptr) &seek_base,        -1,
+    'S', 'V', "LOWPRECLOGICALS", (anyptr) &lowpreclogicals,  -1,
+    'S', 'V', "COMMONEXTERN",    (anyptr) &commonextern,      0,
     'I', 'R', "INPUTTABSIZE",    (anyptr) &intabsize,         8,
+    'X', 'V', "REPLACEBEFORE",   (anyptr) &replacebefore,     4,
 
 /* TARGET LANGUAGE */
     'S', 'T', "ANSIC",           (anyptr) &ansiC,            -1,
@@ -1208,6 +1283,8 @@ struct rcstruct {
     'S', 'V', "CSIGNIF",         (anyptr) &csignif,          -1,
     'S', 'V', "USEANYPTRMACROS", (anyptr) &useAnyptrMacros,  -1,
     'S', 'V', "USEPPMACROS",     (anyptr) &usePPMacros,      -1,
+    'C', 'V', "MAINTYPE",        (anyptr)  maintype,         40,
+    'X', 'V', "REPLACEAFTER",    (anyptr) &replaceafter,      4,
 
 /* TARGET MACHINE */
     'U', 'T', "TARGET",          (anyptr)  target,           40,
@@ -1305,6 +1382,7 @@ struct rcstruct {
 
 /* COMMENTS AND BLANK LINES */
     'S', 'V', "NOBANNER",        (anyptr) &nobanner,	      0,
+    'S', 'V', "SLASHSLASH",      (anyptr) &slashslash,       -1,
     'S', 'V', "EATCOMMENTS",     (anyptr) &eatcomments,       0,
     'S', 'V', "SPITCOMMENTS",    (anyptr) &spitcomments,      0,
     'S', 'V', "SPITORPHANCOMMENTS",(anyptr)&spitorphancomments, 0,
@@ -1321,10 +1399,12 @@ struct rcstruct {
     'C', 'V', "NOSKIPCOMMENT",   (anyptr)  noskipcomment,    40,
     'C', 'V', "SIGNEDCOMMENT",   (anyptr)  signedcomment,    40,
     'C', 'V', "UNSIGNEDCOMMENT", (anyptr)  unsignedcomment,  40,
+    'C', 'V', "TAGCOMMENT",      (anyptr)  tagcomment,       40,
 
 /* STYLISTIC OPTIONS */
     'I', 'V', "MAJORSPACING",    (anyptr) &majorspace,        2,
     'I', 'V', "MINORSPACING",    (anyptr) &minorspace,        1,
+    'I', 'V', "DECLSPACING",     (anyptr) &declspace,        -1,
     'I', 'V', "FUNCSPACING",     (anyptr) &functionspace,     2,
     'I', 'V', "MINFUNCSPACING",  (anyptr) &minfuncspace,      1,
     'S', 'V', "EXTRAPARENS",     (anyptr) &extraparens,      -1,
@@ -1338,6 +1418,8 @@ struct rcstruct {
     'S', 'V', "ADDINDEX",        (anyptr) &addindex,         -1,
     'S', 'V', "STARARRAYS",      (anyptr) &stararrays,        1,
     'S', 'V', "STARFUNCTIONS",   (anyptr) &starfunctions,    -1,
+    'S', 'V', "SPACESTARS",      (anyptr) &spacestars,        0,
+    'S', 'V', "CALLCASTS",       (anyptr) &callcasts,        -1,
     'S', 'V', "POSTINCREMENT",   (anyptr) &postincrement,     1,
     'S', 'V', "MIXVARS",         (anyptr) &mixvars,          -1,
     'S', 'V', "MIXTYPES",        (anyptr) &mixtypes,         -1,
@@ -1346,6 +1428,7 @@ struct rcstruct {
     'S', 'V', "MAINLOCALS",      (anyptr) &mainlocals,        1,
     'S', 'V', "NULLCHAR",        (anyptr) &nullcharconst,     1,
     'S', 'V', "HIGHCHARINT",     (anyptr) &highcharints,      1,
+    'S', 'V', "ANONYMOUSUNIONS", (anyptr) &anonymousunions,  -1,
     'I', 'V', "CASESPACING",     (anyptr) &casespacing,       1,
     'D', 'V', "CASETABS",        (anyptr) &casetabs,       1000,
     'I', 'V', "CASELIMIT",       (anyptr) &caselimit,         9,
@@ -1365,6 +1448,7 @@ struct rcstruct {
     'C', 'V', "SELFINCLUDENAME", (anyptr)  selfincludefmt,   40,
     'C', 'V', "LOGFILENAME",     (anyptr)  logfnfmt,         40,
     'C', 'V', "INCLUDEFILENAME", (anyptr)  includefnfmt,     40,
+    'C', 'V', "INCLUDEOUTFILENAME", (anyptr) includeoutfnfmt, 40,
     'S', 'V', "SYMCASE",         (anyptr) &symcase,          -1,
     'C', 'V', "SYMBOLFORMAT",    (anyptr)  symbolformat,     40,
     'C', 'V', "CONSTFORMAT",     (anyptr)  constformat,      40,
@@ -1390,6 +1474,7 @@ struct rcstruct {
     'C', 'V', "UNIONNAME",       (anyptr)  name_UNION,       40,
     'C', 'V', "UNIONPARTNAME",   (anyptr)  name_VARIANT,     40,
     'C', 'V', "FAKESTRUCTNAME",  (anyptr)  name_FAKESTRUCT,  40,
+    'S', 'V', "TAGSTRUCTS",      (anyptr) &tagstructs,        0,
     'C', 'V', "LABELNAME",       (anyptr)  name_LABEL,       40,
     'C', 'V', "LABELVARNAME",    (anyptr)  name_LABVAR,      40,
     'C', 'V', "TEMPNAME",        (anyptr)  name_TEMP,        40,
@@ -1432,11 +1517,13 @@ struct rcstruct {
     'S', 'V', "SHORTCIRCUIT",    (anyptr) &shortcircuit,     -1,
     'S', 'V', "SHORTOPT",        (anyptr) &shortopt,          1,
     'S', 'V', "ELIMDEADCODE",    (anyptr) &elimdeadcode,      1,
+    'S', 'V', "ANALYZEFLOW",     (anyptr) &analyzeflow,       1,
     'S', 'V', "FOLDCONSTANTS",   (anyptr) &foldconsts,       -1,
     'S', 'V', "FOLDSTRCONSTANTS",(anyptr) &foldstrconsts,    -1,
     'S', 'V', "CHARCONSTS",	 (anyptr) &charconsts,        1,
     'S', 'V', "USECONSTS",       (anyptr) &useconsts,        -1,
     'S', 'V', "USEUNDEF",        (anyptr) &useundef,          1,
+    'S', 'V', "USEINITS",        (anyptr) &useinits,         -1,
     'L', 'V', "SKIPINDICES",     (anyptr) &skipindices,       0,
     'S', 'V', "OFFSETFORLOOPS",  (anyptr) &offsetforloops,    1,
     'S', 'V', "FOREVALORDER",    (anyptr) &forevalorder,      0,
@@ -1473,6 +1560,7 @@ struct rcstruct {
     'S', 'V', "STATICLINKS",     (anyptr) &hasstaticlinks,   -1,
     'S', 'V', "VARSTRINGS",      (anyptr) &varstrings,        0,
     'S', 'V', "VARFILES",        (anyptr) &varfiles,          1,
+    'S', 'V', "USEREFS",         (anyptr) &userefs,          -1,
     'S', 'V', "ADDRSTDFILES",    (anyptr) &addrstdfiles,      0,
     'S', 'V', "COPYSTRUCTFUNCS", (anyptr) &copystructfuncs,  -1,
     'S', 'V', "ATAN2",           (anyptr) &atan2flag,         0,
@@ -1480,6 +1568,7 @@ struct rcstruct {
     'S', 'V', "BITWISEDIV",      (anyptr) &div_po2,          -1,
     'S', 'V', "ASSUMEBITS",      (anyptr) &assumebits,        0,
     'S', 'V', "ASSUMESIGNS",     (anyptr) &assumesigns,       1,
+    'S', 'V', "NEWDELETE",       (anyptr) &newdelete,        -1,
     'S', 'V', "ALLOCZERONIL",    (anyptr) &alloczeronil,      0,
     'S', 'V', "PRINTFONLY",      (anyptr) &printfonly,       -1,
     'S', 'V', "MIXWRITELNS",     (anyptr) &mixwritelns,       1,
@@ -1489,6 +1578,7 @@ struct rcstruct {
     'S', 'V', "FORMATSTRINGS",   (anyptr) &formatstrings,     0,
     'S', 'V', "WHILEFGETS",      (anyptr) &whilefgets,        1,
     'S', 'V', "USEGETS",         (anyptr) &usegets,           1,
+    'C', 'V', "FLOATSCANFCODE",  (anyptr)  floatscanfcode,   40,
     'S', 'V', "NEWLINESPACE",    (anyptr) &newlinespace,     -1,
     'S', 'V', "BUILDREADS",      (anyptr) &buildreads,        1,
     'S', 'V', "BUILDWRITES",     (anyptr) &buildwrites,       1,
@@ -1520,6 +1610,7 @@ struct rcstruct {
     'A', 'V', "INCLUDEDIR",      (anyptr) &includedirs,       0,
     'X', 'V', "INCLUDEFROM",     (anyptr) &includefrom,       1,
     'A', 'V', "LIBRARYFILE",     (anyptr) &librfiles,         0,
+    'X', 'V', "SHELLVARS",       (anyptr) &shellvars,         1,
     'C', 'V', "HEADERNAME",      (anyptr)  p2c_h_name,       40,
     'C', 'V', "PROCTYPENAME",    (anyptr)  name_PROCEDURE,   40,
     'C', 'V', "UCHARNAME",       (anyptr)  name_UCHAR,       40,
@@ -1535,6 +1626,7 @@ struct rcstruct {
     'C', 'V', "MAINNAME",        (anyptr)  name_MAIN,        40,
     'C', 'V', "ESCAPENAME",      (anyptr)  name_ESCAPE,      40,
     'C', 'V', "ESCIONAME",       (anyptr)  name_ESCIO,       40,
+    'C', 'V', "ESCIO2NAME",      (anyptr)  name_ESCIO2,      40,
     'C', 'V', "CHECKIONAME",     (anyptr)  name_CHKIO,       40,
     'C', 'V', "SETIONAME",       (anyptr)  name_SETIO,       40,
     'C', 'V', "FILENOTFOUNDNAME",(anyptr)  filenotfoundname, 40,
@@ -1564,6 +1656,8 @@ struct rcstruct {
     'C', 'V', "STRRTRIMNAME",    (anyptr)  strrtrimname,     40,
     'C', 'V', "STRRPTNAME",      (anyptr)  strrptname,       40,
     'C', 'V', "STRPADNAME",      (anyptr)  strpadname,       40,
+    'C', 'V', "OFSNAME",         (anyptr)  OFSname,          40,
+    'C', 'V', "SEGNAME",         (anyptr)  SEGname,          40,
     'C', 'V', "ABSNAME",         (anyptr)  absname,          40,
     'C', 'V', "ODDNAME",         (anyptr)  oddname,          40,
     'C', 'V', "EVENNAME",        (anyptr)  evenname,         40,
@@ -1578,6 +1672,7 @@ struct rcstruct {
     'C', 'V', "RANDINTNAME",     (anyptr)  randintname,      40,
     'C', 'V', "RANDOMIZENAME",   (anyptr)  randomizename,    40,
     'C', 'V', "SKIPSPACENAME",   (anyptr)  skipspacename,    40,
+    'C', 'V', "SKIPNLSPACENAME", (anyptr)  skipnlspacename,  40,
     'C', 'V', "READLNNAME",      (anyptr)  readlnname,       40,
     'C', 'V', "FREOPENNAME",     (anyptr)  freopenname,      40,
     'C', 'V', "EOFNAME",         (anyptr)  eofname,          40,
@@ -1701,13 +1796,14 @@ extern short C_lex;
 extern char sysprog_flag, partial_eval_flag, iocheck_flag;
 extern char range_flag, ovflcheck_flag, stackcheck_flag;
 extern short switch_strpos;
-extern int fixedflag;
+extern int fixedflag, taggedflag;
 extern int numimports;
 extern Strlist *tempoptionlist;
 extern long curserial, serialcount;
 extern int notephase;
 extern Strlist *permimports;
 extern int permflag;
+extern int nullbody;
 
 #define SYMHASHSIZE 293
 extern Symbol *(symtab[SYMHASHSIZE]);
@@ -1720,26 +1816,32 @@ extern Expr *withexprs[MAXWITHS];
 
 extern Token blockkind;
 extern Meaning *curctx, *curctxlast, *nullctx;
+extern int distinctdef;
 
 extern int fixexpr_tryblock;
 extern short fixexpr_tryflag;
+extern Stmt *fixexpr_stmt;
 
 extern Type *tp_integer, *tp_char, *tp_boolean, *tp_real, *tp_longreal;
 extern Type *tp_anyptr, *tp_jmp_buf, *tp_schar, *tp_uchar, *tp_charptr;
 extern Type *tp_int, *tp_sshort, *tp_ushort, *tp_abyte, *tp_sbyte, *tp_ubyte;
 extern Type *tp_void, *tp_str255, *tp_strptr, *tp_text, *tp_bigtext;
 extern Type *tp_unsigned, *tp_uint, *tp_sint, *tp_smallset, *tp_proc;
+extern Type *tp_cproc;
 extern Meaning *mp_string, *mp_true, *mp_false;
 extern Meaning *mp_input, *mp_output, *mp_stderr;
 extern Meaning *mp_maxint, *mp_minint, *mp_escapecode, *mp_ioresult;
 extern Meaning *mp_uchar, *mp_schar, *mp_unsigned, *mp_uint;
 extern Meaning *mp_str_hp, *mp_str_turbo;
 extern Meaning *mp_val_modula, *mp_val_turbo;
+extern Meaning *mp_new_normal, *mp_new_turbo;
 extern Meaning *mp_blockread_ucsd, *mp_blockread_turbo;
 extern Meaning *mp_blockwrite_ucsd, *mp_blockwrite_turbo;
 extern Meaning *mp_dec_dec, *mp_dec_turbo;
+extern Meaning *mp_self_func;
 extern Expr *ex_input, *ex_output;
 extern Strlist *attrlist;
+extern Expr *new_array_size;
 
 
 #ifndef define_globals

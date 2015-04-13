@@ -5,6 +5,7 @@
 
 
 {*IgnoreNonAlpha=0}   { If Language=UCSD, make sure we can parse "__module" }
+{*UseRefs=0}
 
 
 __module SYSTEM;   {PERMANENT}

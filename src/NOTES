@@ -7,15 +7,7 @@ and "oldest" groups.  I can't guarantee I'll do any of these.  If you do,
 please mail me the diffs so I can incorporate them into the next release.
 Thanks!
 						-- Dave Gillespie
-						   daveg@csvax.caltech.edu
-
------------------------------------------------------------------------------
-
-   The Pascal declaration
-
-      type foo = set of (one, two);
-
-   does not ever write out an "enum { one, two }" declaration in C!
+						   daveg@synaptics.com
 
 -----------------------------------------------------------------------------
 
@@ -202,12 +194,6 @@ Thanks!
 
 -----------------------------------------------------------------------------
 
-   After "type foo = bar;" variables declared as type foo are translated
-   as type bar.  Ought to assume the user has two names for a reason,
-   and copy the distinction into the C code.
-
------------------------------------------------------------------------------
-
    Warn if address is taken of an arithmetic expression like "v1+1".
    Allow user to declare certain bicalls as l-values, e.g., so that
    LSC's topLeft and botRight macros won't generate complaints.
@@ -273,11 +259,6 @@ Thanks!
 -----------------------------------------------------------------------------
 
    Have an indentation parameter for the word "else" by itself on a line.
-
------------------------------------------------------------------------------
-
-   Have an option to use C++'s "//" comments when possible.
-   (0=never, 1=always, def=only for trailing comments.)
 
 -----------------------------------------------------------------------------
 
@@ -672,16 +653,6 @@ Thanks!
 
 -----------------------------------------------------------------------------
 
-   Have an option that makes limited use of variable initialization.
-   If the first statement of a function is an assignment of a constant
-   to a local variable, then the assignment is changed to an initialization.
-   (Non-constant initializers are probably too hard to check for safety.)
-   Should variables with initializers still be mixed?
-   (Example: valid_node_class in netcmp's datastructs module.)
-   File variable initialization is an especially good application for this.
-
------------------------------------------------------------------------------
-
    Have an option that finds cases of multiple assignment.  For example:
       a := x; b := x;   =>  a = b = x;
       a := x; b := a;   =>  a = b = x;
@@ -717,10 +688,9 @@ Thanks!
 
 -----------------------------------------------------------------------------
 
-   Perform a flow analysis after everything else is done; use this to
-   eliminate redundant checks, e.g., for nil pointers or non-open or
-   already-open files.  Also eliminate redundant "j" variables for
-   strwrite statements.
+   Get flow analysis to eliminate redundant nil pointer checks.
+   Also, there's still room for improvement in the handling of
+   file names in StructFiles mode.
 
 -----------------------------------------------------------------------------
 

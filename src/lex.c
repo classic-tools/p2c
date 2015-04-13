@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -149,6 +149,7 @@ Static void makekeywords()
     makekeyword("entry");
     makekeyword("pascal");
     if (cplus != 0) {
+	makekeyword("catch");
         makekeyword("class");
         makekeyword("delete");
         makekeyword("friend");
@@ -156,8 +157,13 @@ Static void makekeywords()
         makekeyword("new");
         makekeyword("operator");
         makekeyword("overload");
+        makekeyword("private");
+        makekeyword("protected");
         makekeyword("public");
+        makekeyword("template");
         makekeyword("this");
+        makekeyword("throw");
+        makekeyword("try");
         makekeyword("virtual");
     }
     makekeyword(name_UCHAR);
@@ -220,6 +226,8 @@ Token tok;
 
 Static void makePascalwords()
 {
+    if (which_lang == LANG_TIP)
+	Pkeyword("ACCESS", TOK_ACCESS);
     Pkeyword("AND", TOK_AND);
     Pkeyword("ARRAY", TOK_ARRAY);
     Pkeywordposs("ANYVAR", TOK_ANYVAR);
@@ -227,7 +235,11 @@ Static void makePascalwords()
     Pkeyword("BEGIN", TOK_BEGIN);
     Pkeywordposs("BY", TOK_BY);
     Pkeyword("CASE", TOK_CASE);
+    if (which_lang == LANG_TIP)
+	Pkeyword("COMMON", TOK_COMMON);
     Pkeyword("CONST", TOK_CONST);
+    Pkeywordposs("CONSTRUCTOR", TOK_CONSTRUCTOR);
+    Pkeywordposs("DESTRUCTOR", TOK_DESTRUCTOR);
     Pkeyword("DIV", TOK_DIV);
     Pkeywordposs("DEFINITION", TOK_DEFINITION);
     Pkeyword("DO", TOK_DO);
@@ -246,6 +258,7 @@ Static void makePascalwords()
     Pkeywordposs("IMPLEMENTATION", TOK_IMPLEMENT);
     Pkeywordposs("IMPORT", TOK_IMPORT);
     Pkeyword("IN", TOK_IN);
+    Pkeywordposs("INHERITED", TOK_INHERITED);
     Pkeywordposs("INLINE", TOK_INLINE);
     Pkeywordposs("INTERFACE", TOK_EXPORT);
     Pkeywordposs("INTERRUPT", TOK_INTERRUPT);
@@ -255,16 +268,20 @@ Static void makePascalwords()
     Pkeywordposs("MODULE", TOK_MODULE);
     Pkeyword("NIL", TOK_NIL);
     Pkeyword("NOT", TOK_NOT);
+    Pkeywordposs("OBJECT", TOK_OBJECT);
     Pkeyword("OF", TOK_OF);
     Pkeyword("OR", TOK_OR);
     Pkeywordposs("ORIGIN", TOK_ORIGIN);
     Pkeywordposs("OTHERWISE", TOK_OTHERWISE);
     Pkeywordposs("OVERLAY", TOK_SEGMENT);
+    Pkeywordposs("OVERRIDE", TOK_OVERRIDE);
     Pkeyword("PACKED", TOK_PACKED);
     Pkeywordposs("POINTER", TOK_POINTER);
+    Pkeywordposs("PRIVATE", TOK_PRIVATE);
     Pkeyword("PROCEDURE", TOK_PROCEDURE);
     Pkeyword("PROGRAM", TOK_PROGRAM);
     Pkeywordposs("QUALIFIED", TOK_QUALIFIED);
+    Pkeywordposs("RANDOM", TOK_RANDOM);
     Pkeyword("RECORD", TOK_RECORD);
     Pkeywordposs("RECOVER", TOK_RECOVER);
     Pkeywordposs("REM", TOK_REM);
@@ -290,6 +307,7 @@ Static void makePascalwords()
 	Pkeywordposs("VALUE", TOK_VALUE);
     Pkeyword("VAR", TOK_VAR);
     Pkeywordposs("VARYING", TOK_VARYING);
+    Pkeywordposs("VIRTUAL", TOK_VIRTUAL);
     Pkeyword("WHILE", TOK_WHILE);
     Pkeyword("WITH", TOK_WITH);
     Pkeywordposs("XOR", TOK_XOR);
@@ -424,6 +442,7 @@ void setup_lex()
         partial_eval_flag = (which_lang == LANG_TURBO ||
 			     which_lang == LANG_VAX ||
 			     which_lang == LANG_OREGON ||
+			     which_lang == LANG_TIP ||
 			     modula2 ||
 			     hpux_lang);
     else
@@ -433,6 +452,7 @@ void setup_lex()
     ovflcheck_flag = 1;
     stackcheck_flag = 1;
     fixedflag = 0;
+    taggedflag = 0;
     withlevel = 0;
     makekeywords();
     makePascalwords();
@@ -502,7 +522,7 @@ void counterror()
 	    if (verbose)
 		fprintf(logf, "Translation aborted: Too many errors.\n");
 	    closelogfile();
-	    exit(EXIT_FAILURE);
+	    exit_failure();
 	}
     }
 }
@@ -517,16 +537,16 @@ char *msg;
     fprintf(outf, "/* Translation aborted. */\n");
     fprintf(outf, "--------------------------\n");
     if (outf != stdout) {
-        printf("%s, line %d/%d: %s\n", infname, inf_lnum, outf_lnum, msg);
+        printf("\"%s\", line %d,%d: %s\n", infname, inf_lnum, outf_lnum, msg);
         printf("Translation aborted.\n");
     }
     if (verbose) {
-	fprintf(logf, "%s, line %d/%d: %s\n",
+	fprintf(logf, "%s:%d:%d: %s\n",
 		infname, inf_lnum, outf_lnum, msg);
 	fprintf(logf, "Translation aborted.\n");
     }
     closelogfile();
-    exit(EXIT_FAILURE);
+    exit_failure();
 }
 
 
@@ -542,7 +562,7 @@ char *msg;
 {
     if (checkeatnote(msg)) {
 	if (verbose)
-	    fprintf(logf, "%s, %d/%d: Omitted warning: %s\n",
+	    fprintf(logf, "%s:%d:%d: Omitted warning: %s\n",
 		    infname, inf_lnum, outf_lnum, msg);
 	return;
     }
@@ -557,14 +577,14 @@ char *proc, *msg;
 {
     if (checkeatnote(msg)) {
 	if (verbose)
-	    fprintf(logf, "%s, %d/%d: Omitted internal error in %s: %s\n",
+	    fprintf(logf, "%s:%d:%d: Omitted internal error in %s: %s\n",
 		    infname, inf_lnum, outf_lnum, proc, msg);
 	return;
     }
     beginerror();
     addnote(format_ss("Internal error in %s: %s", proc, msg), curserial);
     if (error_crash)
-        exit(EXIT_FAILURE);
+        exit_failure();
     counterror();
 }
 
@@ -576,7 +596,7 @@ char *msg;
 {
     if (blockkind == TOK_IMPORT || checkeatnote(msg)) {
 	if (verbose)
-	    fprintf(logf, "%s, %d/%d: Omitted note: %s\n",
+	    fprintf(logf, "%s:%d:%d: Omitted note: %s\n",
 		    infname, inf_lnum, outf_lnum, msg);
 	return;
     }
@@ -592,12 +612,12 @@ char *msg;
 {
     if (blockkind == TOK_IMPORT || checkeatnote(msg)) {
 	if (verbose)
-	    fprintf(logf, "%s, %d/%d: Omitted end-note: %s\n",
+	    fprintf(logf, "%s:%d:%d: Omitted end-note: %s\n",
 		    infname, inf_lnum, outf_lnum, msg);
 	return;
     }
     if (verbose)
-	fprintf(logf, "%s, %d/%d: Recorded end-note: %s\n",
+	fprintf(logf, "%s:%d:%d: Recorded end-note: %s\n",
 		infname, inf_lnum, outf_lnum, msg);
     (void) strlist_add(&endnotelist, msg);
 }
@@ -614,11 +634,17 @@ void showendnotes()
     if (endnotelist) {
 	end_source();
 	while (endnotelist) {
-	    if (outf != stdout) {
-		beginerror();
-		printf("Note: %s\n", endnotelist->s);
+	    if (!quietmode) {
+		if (outf != stdout) {
+		    beginerror();
+		    printf("Note: %s\n", endnotelist->s);
+		} else
+		    fprintf(stderr, "Note: %s\n", endnotelist->s);
 	    }
-	    fprintf(outf, "/* p2c: Note: %s */\n", endnotelist->s);
+	    if (slashslash)
+		fprintf(outf, "// p2c: Note: %s\n", endnotelist->s);
+	    else
+		fprintf(outf, "/* p2c: Note: %s */\n", endnotelist->s);
 	    outf_lnum++;
 	    strlist_eat(&endnotelist);
 	}
@@ -871,7 +897,6 @@ int num;
 
 
 
-
 Symbol *findsymbol_opt(name)
 char *name;
 {
@@ -969,6 +994,56 @@ void progress()
 
 
 
+void replacestrings(buf, sl)
+char *buf;
+Strlist *sl;
+{
+    Strlist *p = sl;
+    while (p) {
+	char *cp = buf;
+	char first = tolower(p->s[0]);
+	char ufirst = toupper(p->s[0]);
+	while (*cp) {
+	    if (*cp == first || *cp == ufirst) {
+		char *cp1 = cp;
+		char *cp2 = p->s;
+		while (*cp2 && toupper(*cp1) == toupper(*cp2))
+		    cp1++, cp2++;
+		if (!*cp2) {
+		    int diff = strlen((char *)p->value) - strlen(p->s);
+		    if (diff > 0) {
+			cp1 = cp + strlen(cp);
+			while (cp1 >= cp) {
+			    cp1[diff] = *cp1;
+			    cp1--;
+			}
+		    } else if (diff < 0) {
+			while (*cp1) {
+			    cp1[diff] = *cp1;
+			    cp1++;
+			}
+			cp1[diff] = 0;
+		    }
+		    cp2 = (char *)p->value;
+		    while (*cp2)
+			*cp++ = *cp2++;
+		} else
+		    cp++;
+	    } else if (*cp == '\'') {
+		while (*++cp && *cp != '\'') ;
+		if (*cp) cp++;
+	    } else if (*cp == '"') {
+		while (*++cp && *cp != '"') ;
+		if (*cp) cp++;
+	    } else
+		cp++;
+	}
+	p = p->next;
+    }
+}
+
+
+
 void getline()
 {
     char *cp, *cp2;
@@ -983,6 +1058,7 @@ void getline()
                 cp = inbuf + strlen(inbuf);
                 if (*inbuf && cp[-1] == '\n')
                     cp[-1] = 0;
+		replacestrings(inbuf, replacebefore);
 		if (inbuf[0] == '#' && inbuf[1] == ' ' && isdigit(inbuf[2])) {
 		    cp = inbuf + 2;    /* in case input text came */
 		    inf_lnum = 0;      /*  from the C preprocessor */
@@ -1205,7 +1281,7 @@ char *name;
             return 1;
 
         case 'X':
-            if (rctable[i].def == 1) {
+            if (rctable[i].def == 1 || rctable[i].def == 4) {
                 strlist_remove((Strlist **)rctable[i].ptr, name);
                 return 1;
             }
@@ -1285,6 +1361,22 @@ char *closing, *after;
 	if (cp == closing) {
 	    inbufptr = after;
 	    doublereals = 0;
+	    return 1;
+	}
+    } else if (!strcincmp(inbufptr, "$no object", 10)) {
+	cp = inbufptr + 10;
+	while (isspace(*cp)) cp++;
+	if (cp == closing) {
+	    inbufptr = after;
+	    nullbody = 1;
+	    return 1;
+	}
+    } else if (!strcincmp(inbufptr, "$nullbody", 9)) {
+	cp = inbufptr + 9;
+	while (isspace(*cp)) cp++;
+	if (cp == closing) {
+	    inbufptr = after;
+	    nullbody = 1;
 	    return 1;
 	}
     }
@@ -1367,11 +1459,22 @@ char *closing, *after;
 	    }
 	    return 0;
 
+        case '=':
+	    switch (inbufptr[1]) {
+
+	        case 'f':
+	        case 'F':
+		    goto do_include;
+
+	    }
+	    return 0;
+
         case ' ':
             switch (inbufptr[1]) {
 
                 case 'i':
                 case 'I':
+		do_include:
                     if (skipping_module)
                         break;
                     cp = inbufptr + 3;
@@ -1544,12 +1647,6 @@ int lnum;
             if (!wexpecttok(TOK_IDENT))
 		break;
             sym = curtoksym;
-            if (sym->mbase &&
-		(sym->mbase->kind == MK_FUNCTION ||
-		 sym->mbase->kind == MK_SPECIAL))
-                sl = NULL;
-            else
-                sl = strlist_append(&funcmacros, sym->name);
             gettok();
             funcmacroargs = NULL;
             if (curtok == TOK_LPAR) {
@@ -1571,10 +1668,24 @@ int lnum;
             }
             if (!wneedtok(TOK_EQ))
 		break;
-            if (sl)
-                sl->value = (long)pc_expr();
-            else
-                sym->mbase->constdefn = pc_expr();
+	    ex = pc_expr();
+	    for (;;) {
+		if (sym->mbase &&
+		    (sym->mbase->kind == MK_FUNCTION ||
+		     sym->mbase->kind == MK_SPECIAL)) {
+		    sym->mbase->constdefn = ex;
+		} else {
+		    sl = strlist_append(&funcmacros, sym->name);
+		    sl->value = (long)ex;
+		}
+		if (!strcmp(sym->name, "NEW") || !strcmp(sym->name, "DEC") ||
+		    !strcmp(sym->name, "STR") || !strcmp(sym->name, "VAL") ||
+		    !strcmp(sym->name, "BLOCKREAD") ||
+		    !strcmp(sym->name, "BLOCKWRITE"))
+		    sym = findsymbol(format_s("%s_TURBO", sym->name));
+		else
+		    break;
+	    }
             for (sl2 = funcmacroargs; sl2; sl2 = sl2->next) {
                 sym2 = (Symbol *)sl2->value;
                 sym2->flags &= ~FMACREC;
@@ -1739,6 +1850,13 @@ int p2c_only, starparen;
 		warning("{UNSIGNED} applied to type other than CHAR or INTEGER [313]");
 	    return 2;
 	}
+	if (!strncmp(inbufptr, tagcomment, strlen(tagcomment)) &&
+	     *tagcomment &&
+	     inbufptr + strlen(tagcomment) == closing) {
+	    taggedflag++;
+	    inbufptr = after;
+	    return 1;
+	}
         if (*inbufptr == '$') {
             i = turbo_directive(closing, after);
             if (i)
@@ -1755,6 +1873,9 @@ int p2c_only, starparen;
         return 0;
     while ((isalnum(*cp) || *cp == '_') && cp2 < namebuf+300)
         *cp2++ = toupper(*cp++);
+    if (cp[0] == '+' && cp[1] == '+' &&
+	cp == inbufptr+1 && toupper(cp[-1]) == 'C')
+	*cp2++ = *cp++, *cp2++ = *cp++;
     *cp2 = 0;
     i = numparams;
     while (--i >= 0 && strcmp(rctable[i].name, namebuf)) ;
@@ -2024,22 +2145,35 @@ int p2c_only, starparen;
             switch (rctable[i].def) {
 
                 case 1:     /* strlist with string values */
+                case 4:     /* strlist with string values */
                     if (!isspace(*cp) && *cp != '=' && 
                         *cp != '+' && *cp != '-')
                         return 0;
                     chgmode = *cp++;
                     skipspc(cp);
                     cp2 = namebuf;
-                    while (isalnum(*cp) || *cp == '_' ||
-			   *cp == '$' || *cp == '%' ||
-			   *cp == '.' || *cp == '-' ||
-			   (*cp == '\'' && cp[1] && cp[2] == '\'' &&
-			    cp+1 != closing && cp[1] != '=')) {
-			if (*cp == '\'') {
+		    if (*cp == '"' && rctable[i].def == 4) {
+			cp++;
+			while (*cp != '"') {
+			    if (cp == closing)
+				return 0;
+			    if (*cp == 92 && cp+1 < closing)
+				cp++;
 			    *cp2++ = *cp++;
+			}
+			cp++;
+		    } else {
+			while (isalnum(*cp) || *cp == '_' ||
+			       *cp == '$' || *cp == '%' ||
+			       *cp == '.' || *cp == '-' ||
+			       (*cp == '\'' && cp[1] && cp[2] == '\'' &&
+				cp+1 != closing && cp[1] != '=')) {
+			    if (*cp == '\'') {
+				*cp2++ = *cp++;
+				*cp2++ = *cp++;
+			    }			    
 			    *cp2++ = *cp++;
-			}			    
-                        *cp2++ = *cp++;
+			}
 		    }
                     *cp2++ = 0;
                     if (chgmode == '-') {
@@ -2061,8 +2195,21 @@ int p2c_only, starparen;
                         if (tempopt)
                             strlist_insert(&tempoptionlist, namebuf)->value = i;
                         cp2 = namebuf;
-                        while (*cp && cp != closing && !isspace(*cp))
-                            *cp2++ = *cp++;
+			if (*cp == '"' && rctable[i].def == 4) {
+			    cp++;
+			    while (*cp != '"') {
+				if (cp == closing)
+				    return 0;
+				if (*cp == 92 && cp+1 < closing)
+				    cp++;
+				*cp2++ = *cp++;
+			    }
+			    cp++;
+			    skipspc(cp);
+			} else {
+			    while (*cp && cp != closing && !isspace(*cp))
+				*cp2++ = *cp++;
+			}
                         *cp2++ = 0;
                         skipspc(cp);
                         if (cp != closing)
@@ -2132,7 +2279,7 @@ int p2c_only, starparen;
 
 
 Static void comment(starparen)
-int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
+int starparen;    /* 0={ }, 1=(* *), 2=C comments, 3=" " */
 {
     register char ch;
     int nestcount = 1, startlnum = inf_lnum, wasrel = 0, trailing;
@@ -2145,7 +2292,8 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
     cp = inbuf;
     while (isspace(*cp))
 	cp++;
-    trailing = (*cp != '{' && ((*cp != '(' && *cp != '/') || cp[1] != '*'));
+    trailing = (*cp != '{' && ((*cp != '(' && *cp != '/') || cp[1] != '*') &&
+		(*cp != '"' || starparen != 3));
     cmtindent = inbufindent;
     cmtindent2 = cmtindent + 1 + (starparen != 0);
     cp = inbufptr;
@@ -2158,7 +2306,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 
             case '}':
                 if ((!starparen || nestedcomments == 0) &&
-		    starparen != 2 &&
+		    starparen < 2 &&
                     --nestcount <= 0) {
                     *cp = 0;
 		    if (wasrel && !strcmp(curtokbuf, "\003"))
@@ -2170,14 +2318,27 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
                 }
                 break;
 
+            case '"':
+                if (starparen == 3) {
+                    *cp = 0;
+		    if (wasrel && !strcmp(curtokbuf, "\003"))
+			*curtokbuf = '\002';
+		    if (!commenting_flag)
+			commentline(trailing ? CMT_TRAIL : CMT_POST);
+		    eatcomments = saveeat;
+                    return;
+                }
+                break;
+
             case '{':
-                if (nestedcomments == 1 && starparen != 2)
+                if (nestedcomments == 1 && starparen < 2)
                     nestcount++;
                 break;
 
             case '*':
-                if ((*inbufptr == ((starparen == 2) ? '/' : ')') &&
-		     (starparen || nestedcomments == 0)) &&
+                if (*inbufptr == ((starparen == 2) ? '/' : ')') &&
+		    starparen < 3 &&
+		    (starparen || nestedcomments == 0) &&
                     --nestcount <= 0) {
                     inbufptr++;
                     *cp = 0;
@@ -2192,7 +2353,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 
             case '(':
                 if (*inbufptr == '*' && nestedcomments == 1 &&
-		    starparen != 2) {
+		    starparen < 2) {
 		    *cp++ = ch;
 		    ch = *inbufptr++;
                     nestcount++;
@@ -2235,7 +2396,7 @@ int starparen;    /* 0={ }, 1=(* *), 2=C comments*/
 		    while (--i >= 0)
 			*cp++ = ' ';
 		} else
-		    *cp++ = '\003';
+		    *cp++ = (slashslash) ? '\002' : '\003';
                 continue;
 
             case EOFMARK:
@@ -2504,14 +2665,59 @@ char *cp;
 
 
 
-int peeknextchar()
+char *peeknextptr()
 {
     char *cp;
 
     cp = inbufptr;
-    while (isspace(*cp))
-	cp++;
+    for (;;) {
+	if (isspace(*cp)) {
+	    cp++;
+	} else if (*cp == '{') {
+	    while (*cp && *cp != '}')
+		cp++;
+	    if (*cp)
+		cp++;
+	} else if (*cp == '(' && cp[1] == '*') {
+	    cp += 2;
+	    while (*cp && (*cp != '*' || cp[1] != ')'))
+		cp++;
+	    if (*cp)
+		cp += 2;
+	} else {
+	    return cp;
+	}
+    }
+}
+
+
+int peeknextchar()
+{
+    char *cp;
+
+    cp = peeknextptr();
+    if (*cp == ':')
+	if (cp[1] == '=')
+	    return 1;
+	else if (cp[1] == ':')
+	    return 2;
     return *cp;
+}
+
+
+int peeknextword(word)
+char *word;
+{
+    char *cp;
+    int len;
+
+    cp = peeknextptr();
+    len = strlen(word);
+    if (strcincmp(cp, word, len))
+	return 0;
+    if (isalnum(cp[len]) || cp[len] == '_')
+	return 0;
+    return 1;
 }
 
 
@@ -2529,7 +2735,7 @@ void gettok()
             case TOK_OCTLIT:
             case TOK_INTLIT:
             case TOK_MININT:
-                printf(", curtokint = %d", curtokint);
+                printf(", curtokint = %ld", curtokint);
                 break;
             case TOK_REALLIT:
             case TOK_STRLIT:
@@ -2585,6 +2791,21 @@ void gettok()
 		    commentline(CMT_POST);
 		}
                 break;
+
+	    case '\f':
+		cp = curtokbuf;
+		*cp++ = '\001';
+		*cp++ = '\014';
+		if (!*inbufptr && !commenting_flag) {
+		    getline();
+		    while (!*inbufptr) {
+			*cp++ = '\001';
+			getline();
+		    }
+		}
+		*cp = 0;
+		commentline(CMT_POST);
+		break;
 
             case '\t':
             case ' ':
@@ -2758,11 +2979,36 @@ void gettok()
 		    curtok = TOK_STRLIT;
 		    return;
 		}
+		if (which_lang == LANG_TIP) {
+		    strcpy(curtokbuf, inbufptr);
+		    cp = inbuf;
+		    while (isspace(*cp))
+			cp++;
+		    if (!commenting_flag)
+			commentline((*cp != '"') ? CMT_TRAIL : CMT_POST);
+		    inbufptr += strlen(inbufptr);
+                    break;
+                }
+		if (which_lang == LANG_APOLLO) {
+		    comment(3);
+		    break;
+		}
 		goto stringLiteral;
 
             case '#':
 		if (modula2) {
 		    curtok = TOK_NE;
+		    return;
+		}
+		if (which_lang == LANG_TIP) {
+		    cp = curtokbuf;    /* Turbo hex constant */
+		    while (isxdigit(*inbufptr))
+			*cp++ = *inbufptr++;
+		    if (toupper(*inbufptr) == 'L')
+			*cp++ = *inbufptr++;
+		    *cp = 0;
+		    curtok = TOK_HEXLIT;
+		    curtokint = my_strtol(curtokbuf, NULL, 16);
 		    return;
 		}
 		cp = inbufptr;
@@ -2808,13 +3054,58 @@ void gettok()
                                 else
                                     inbufptr++;
                             }
+			    if (ch == '#' && which_lang == LANG_TIP) {
+				if (isxdigit(*inbufptr) &&
+				    isxdigit(inbufptr[1])) {
+				    ch = *inbufptr++;
+				    if (isdigit(ch))
+					i = ch - '0';
+				    else
+					i = toupper(ch) - 'A' + 10;
+				    ch = *inbufptr++;
+				    if (isdigit(ch))
+					i = i*16 + ch - '0';
+				    else
+					i = i*16 + toupper(ch) - 'A' + 10;
+				    ch = i;
+				} else if (*inbufptr == ch)
+				    inbufptr++;
+			    }
                             *cp++ = ch;
                         }
                         if (ch != ch2)
                             warning("Error in string literal [243]");
                     } else {
                         ch = *inbufptr++;
-                        if (isdigit(ch)) {
+			/* Check for Turbo #$FF hex constant */
+			/* (Contributed by Robert Andersson, robert@gar.no) */
+			if (ch == '$' && isxdigit(*inbufptr)) {
+			    /* Pick out the hex number */
+			    i = 0;
+			    ch = *inbufptr++;
+			    while (isxdigit(ch)) {
+				if (isdigit(ch))
+				    i = i*16 + ch - '0';
+				else if (ch >= 'a')
+				    i = i*16 + ch - 'a' + 10;
+				else if (ch >= 'A')
+				    i = i*16 + ch - 'A' + 10;
+				ch = *inbufptr++;
+			    }
+			    while (ch == ' ' || ch == '\t')
+				ch = *inbufptr++;
+			    inbufptr--;
+#if 0
+    /* Not safe---consider "var ch:char; begin ch:=#$ff end". */
+			    /* Check if part of a string */
+			    if (cp == curtokbuf && ch != '#' && ch != ch2) {
+				curtokint = i;
+				curtok = TOK_HEXLIT;
+				return;
+			    }
+#endif
+			    *cp++ = i;
+			} else if (isdigit(ch)) {
                             i = 0;
                             while (isdigit(ch)) {
                                 i = i*10 + ch - '0';
@@ -2850,6 +3141,13 @@ void gettok()
                     curtok = TOK_LBR;
                     inbufptr++;
                 } else {
+#if 0
+		    if (!C_lex && peeknextchar() == ')') {
+			gettok();
+			gettok();
+			return;
+		    }
+#endif
                     curtok = TOK_LPAR;
                 }
                 return;
@@ -3130,6 +3428,7 @@ void gettok()
                     }
                     if (ch == 'e' || ch == 'E' ||
 			ch == 'd' || ch == 'D' ||
+			ch == 'l' || ch == 'L' ||
 			ch == 'q' || ch == 'Q') {
                         ch = *inbufptr;
                         if (isdigit(ch) || ch == '+' || ch == '-') {
@@ -3158,7 +3457,7 @@ void gettok()
 			    }
                             if (i == 0) {
                                 curtok = TOK_MININT;
-                                curtokint = -2147483648;
+                                curtokint = (-2147483647) - 1;
                                 return;
                             }
                         }
@@ -3290,6 +3589,7 @@ ident:
 			}
 			curtok = TOK_IDENT;
                         curtoksym = sp;
+			curtokint = -1;
                         if ((i = withlevel) != 0 && sp->fbase) {
                             while (--i >= 0) {
                                 curtokmeaning = sp->fbase;

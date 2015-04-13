@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -60,6 +60,7 @@ Static int deferallptrs;
 Static int anydeferredptrs;
 Static int silentalreadydef;
 Static int nonloclabelcount;
+Static int useextern;
 
 Static Strlist *varstructdecllist;
 
@@ -280,8 +281,11 @@ void setup_decl()
     tempvarcount = 0;
     deferallptrs = 0;
     silentalreadydef = 0;
+    distinctdef = 0;
     varstructdecllist = NULL;
     nonloclabelcount = -1;
+    useextern = -1;
+    new_array_size = NULL;
     for (i = 0; i < stringtypecachesize; i++)
         stringtypecache[i] = NULL;
 
@@ -376,6 +380,10 @@ void setup_decl()
     mp->type = tp_longreal;   /* good enough */
     mp = makestandardmeaning(MK_TYPE, "QUADRUPLE");
     mp->type = tp_longreal;   /* good enough */
+    mp = makestandardmeaning(MK_TYPE, "FIXED");
+    mp->type = tp_longreal;
+    mp = makestandardmeaning(MK_TYPE, "DECIMAL");
+    mp->type = tp_longreal;
 
     tp_sshort = makestandardtype(TK_SUBR, makestandardmeaning(MK_TYPE,
                   (integer16 == 1) ? "INTEGER" : "SWORD"));
@@ -463,6 +471,11 @@ void setup_decl()
     tp_proc->basetype = maketype(TK_FUNCTION);
     tp_proc->basetype->basetype = tp_void;
     tp_proc->escale = 1;   /* saved "hasstaticlinks" */
+
+    tp_cproc = maketype(TK_CPROCPTR);
+    tp_cproc->basetype = maketype(TK_FUNCTION);
+    tp_cproc->basetype->basetype = tp_void;
+    tp_cproc->escale = 0;
 
     tp_str255 = makestandardtype(TK_STRING, NULL);             /* "Char []" */
     tp_str255->basetype = tp_char;
@@ -762,7 +775,7 @@ int all;
 {
     register Meaning *mp, **mpprev, *mp2, **mpp2;
 
-    if (ctx->kind == MK_FUNCTION && ctx->isfunction && ctx->cbase)
+    if (ctx->kind == MK_FUNCTION && ctx->isfunction && ctx->cbase && !all)
 	mpprev = &ctx->cbase->cnext;   /* Skip return-value variable */
     else
 	mpprev = &ctx->cbase;
@@ -816,7 +829,7 @@ void handle_nameof()
         sl2->value = sl->value;
         if (debug > 0)
             fprintf(outf, "symbol %s gets \"%s\" -> \"%s\"\n",
-                          sp->name, sl2->s, sl2->value);
+                          sp->name, sl2->s, (char *)sl2->value);
     }
     strlist_empty(&nameoflist);
 }
@@ -855,18 +868,36 @@ Meaning *mp;
     mp->fakeparam = 0;
     mp->namedfile = 0;
     mp->bufferedfile = 0;
+    mp->isref = 0;
     mp->comments = NULL;
+    mp->rectype = NULL;
 }
 
 
 
-int issafename(sp, isglobal, isdefine)
+int issafename(sp, isglobal, isdefine, isfield)
 Symbol *sp;
-int isglobal, isdefine;
+int isglobal, isdefine, isfield;
 {
+    Meaning *mp;
+
+    if ((!*alternatename1 || !strcmp(alternatename1, "%s")) &&
+	(!*alternatename2 || !strcmp(alternatename2, "%s")) &&
+	(!*alternatename || !strcmp(alternatename, "%s")))
+	return 1;
+    if (isfield && (sp->flags & AVOIDFIELD) && !reusefieldnames)
+	return 0;
     if (isdefine && curctx->kind != MK_FUNCTION) {
 	if (sp->flags & FWDPARAM)
 	    return 0;
+    }
+    if (distinctdef) {
+	mp = curctx->cbase;
+	while (mp) {
+	    if (mp->name && !strcmp(mp->name, sp->name))
+		return 0;
+	    mp = mp->cnext;
+	}
     }
     if ((sp->flags & AVOIDNAME) ||
 	(isdefine && (sp->flags & AVOIDFIELD)) ||
@@ -878,7 +909,7 @@ int isglobal, isdefine;
 
 
 
-static Meaning *enum_tname;
+Static Meaning *enum_tname;
 
 void setupmeaning(mp, sym, kind, namekind)
 Meaning *mp;
@@ -893,7 +924,7 @@ enum meaningkind kind, namekind;
     if (!sym)
 	sym = findsymbol("Spam");   /* reduce crashes due to internal errors */
     if (sym->mbase && sym->mbase->ctx == curctx &&
-	curctx != NULL && !silentalreadydef)
+	curctx != NULL && !silentalreadydef && !distinctdef)
         alreadydef(sym);
     mp->sym = sym;
     mp->snext = sym->mbase;
@@ -917,7 +948,7 @@ enum meaningkind kind, namekind;
     if (kind == MK_VAR) {
         sl = strlist_find(varmacros, sym->name);
         if (sl) {
-            kind = namekind = MK_VARMAC;
+	    mp->kind = kind = namekind = MK_VARMAC;
             mp->constdefn = (Expr *)sl->value;
             strlist_delete(&varmacros, sl);
         }
@@ -973,7 +1004,7 @@ enum meaningkind kind, namekind;
             sl = strlist_cifind(sym->symbolnames, curctx->sym->name);
             if (sl) {
                 if (debug > 2)
-                    fprintf(outf, "found \"%s\"\n", sl->value);
+                    fprintf(outf, "found \"%s\"\n", (char *)sl->value);
                 name = (char *)sl->value;
                 wasaliased = 1;
             }
@@ -984,7 +1015,7 @@ enum meaningkind kind, namekind;
             sl = strlist_find(sym->symbolnames, "");
             if (sl) {
                 if (debug > 2)
-                    fprintf(outf, "found \"%s\"\n", sl->value);
+                    fprintf(outf, "found \"%s\"\n", (char *)sl->value);
                 name = (char *)sl->value;
                 wasaliased = 1;
             }
@@ -1046,7 +1077,7 @@ enum meaningkind kind, namekind;
 		    *cp2 = '_';
 	}
         sym2 = findsymbol(findaltname(cp, altnum));
-    } while (!issafename(sym2, isglobal, isdefine) &&
+    } while (!issafename(sym2, isglobal, isdefine, 0) &&
 	     namekind != MK_MODULE && !wasaliased);
     mp->name = stralloc(sym2->name);
     if (sym2->flags & WARNNAME)
@@ -1199,8 +1230,7 @@ Meaning *tname;
 				     tname && tname->name ? tname->name
 				                          : "FIELD");
                 sym2 = findsymbol(findaltname(name, altnum));
-            } while (!issafename(sym2, 0, 0) ||
-		     ((sym2->flags & AVOIDFIELD) && !reusefieldnames));
+            } while (!issafename(sym2, 0, 0, 1));
 	    sym2->flags |= AVOIDFIELD;
         }
         mp->kind = MK_FIELD;
@@ -1229,6 +1259,16 @@ int big;   /* 0=TK_FILE, 1=TK_BIGFILE, -1=either */
     return ((type->kind == TK_POINTER &&
 	     type->basetype->kind == TK_FILE && big != 1) ||
 	    (type->kind == TK_BIGFILE && big != 0));
+}
+
+
+int israndomfile(type)
+Type *type;
+{
+    if (type->kind == TK_POINTER)
+	type = type->basetype;
+    return ((type->kind == TK_FILE || type->kind == TK_BIGFILE) &&
+	    type->issigned);
 }
 
 
@@ -1278,7 +1318,12 @@ Expr *ex;
     if (ex->val.type->kind == TK_BIGFILE)
 	return makeexpr_dotq(copyexpr(ex), "name", tp_str255);
     else if ((mp = isfilevar(ex)) && mp->namedfile)
-	return makeexpr_name(format_s(name_FNVAR, mp->name), tp_str255);
+	if (mp->kind == MK_FIELD)
+	    return makeexpr_dotq(copyexpr(ex->args[0]),
+				 format_s(name_FNVAR, mp->name),
+				 tp_str255);
+	else
+	    return makeexpr_name(format_s(name_FNVAR, mp->name), tp_str255);
     else
 	return NULL;
 }
@@ -1326,9 +1371,13 @@ int flags;
 		        if (stararrays == 1 ||
 			    !(flags & ODECL_FREEARRAY) ||
 			    type->basetype->structdefd) {
-			    type = type->basetype->basetype;
 			    flags &= ~ODECL_CHARSTAR;
+#ifdef PRES_PTR_ARRAY
+			    type = type->basetype;
+#else
+			    type = type->basetype->basetype;
 			    continue;
+#endif
 			}
                         break;
 
@@ -1338,6 +1387,7 @@ int flags;
 		if (type->preserved && !(flags & ODECL_NOPRES))
 		    return type;
 		if (type->fbase && type->fbase->wasdeclared &&
+		    type->basetype->kind != TK_POINTER &&
 		    (flags & ODECL_DECL)) {
 		    typename.meaning = type->fbase;
 		    typename.preserved = 1;
@@ -1399,7 +1449,7 @@ int flags;
                     type == tp_ushort || type == tp_sshort) {
                     return type;
                 } else if ((type->basetype->kind == TK_ENUM && useenum) ||
-                           type->basetype->kind == TK_BOOLEAN && *name_BOOLEAN) {
+                           (type->basetype->kind == TK_BOOLEAN && *name_BOOLEAN)) {
                     return type->basetype;
                 } else {
                     if (ord_range(type, &smin, &smax)) {
@@ -1613,14 +1663,18 @@ int isheader, isforward;
                 } else {
 		    output(storageclassname(varstorageclass(mp)));
 		    if (!shownames || (isforward && *name == '_')) {
-			out_type(tp, 1);
+			out_type(tp, (mp->isref) ? ODECL_REF : 0);
 		    } else {
 			if (dopromote)
 			    tp = promote_type(tp);
-			outbasetype(tp, ODECL_CHARSTAR|ODECL_FREEARRAY);
-			output(" ");
+			if (mp->dtype)
+			    output(mp->dtype->name);
+			else
+			    outbasetype(tp, ODECL_CHARSTAR|ODECL_FREEARRAY);
 			outdeclarator(tp, name,
-				      ODECL_CHARSTAR|ODECL_FREEARRAY);
+				      ODECL_CHARSTAR | ODECL_FREEARRAY |
+				      ODECL_SPACE |
+				      ((mp->isref) ? ODECL_REF : 0));
 		    }
 		}
                 if (isheader)
@@ -1698,7 +1752,7 @@ Type *type;
 char *name;
 int flags;
 {
-    int i, depth, anyptrs, anyarrays;
+    int i, depth, anyptrs, anyarrays, spaceafter;
     Expr *dimen[30];
     Expr *ex, *maxv;
     Type *tp, *functype, *basetype;
@@ -1708,7 +1762,15 @@ int flags;
     anyarrays = 0;
     functype = NULL;
     basetype = findbasetype(type, flags);
-    for (depth = 0, tp = type; tp && tp != basetype; tp = tp->basetype) {
+    depth = 0;
+    if (flags & ODECL_REF)
+	dimen[depth++] = NULL;
+    if (new_array_size) {
+	dimen[depth++] = copyexpr(new_array_size);
+	anyarrays = 1;
+	new_array_size = NULL;
+    }
+    for (tp = type; tp && tp != basetype; tp = tp->basetype) {
         switch (tp->kind) {
 
             case TK_POINTER:
@@ -1732,6 +1794,10 @@ int flags;
 				 stararrays != 2)) {
 				tp = tp->basetype;
 				flags &= ~ODECL_CHARSTAR;
+#ifdef PRES_PTR_ARRAY
+				if (tp->preserved && !(flags & ODECL_NOPRES))
+				    continue;
+#endif
 			    } else {
 				continue;
 			    }
@@ -1744,6 +1810,7 @@ int flags;
                 dimen[depth++] = NULL;
                 anyptrs++;
 		if (tp->kind == TK_POINTER &&
+		    tp->basetype->kind != TK_POINTER &&
 		    tp->fbase && tp->fbase->wasdeclared)
 		    break;
                 continue;
@@ -1813,11 +1880,24 @@ int flags;
         output(" ");    /* spacing for abstract declarator */
     if ((flags & ODECL_FUNCTION) && anyptrs)
         output(" ");
+    spaceafter = ((spacestars == 1 || spacestars == 3 ||
+		   (spacestars == 2 && (flags & ODECL_REF) && depth == 1)) &&
+		  depth > 0 && !dimen[depth-1]);
+    if ((flags & ODECL_SPACE) && !spaceafter)
+	output((flags & ODECL_SPMRG) ? " \005" : " ");
     if (anyarrays > 1 && !(flags & ODECL_FUNCTION))
 	output("\003");
     for (i = depth; --i >= 0; ) {
-        if (!dimen[i])
-            output("*");
+        if (!dimen[i]) {
+	    if (i == 0 && (flags & ODECL_REF)) {
+		if ((flags & ODECL_SPACE) && spaceafter && spacestars == 3) {
+		    output((flags & ODECL_SPMRG) ? " \005" : " ");
+		    spaceafter = 0;
+		}
+		output("&");
+	    } else
+		output("*");
+	}
         if (i > 0 &&
             ((dimen[i] && !dimen[i-1]) ||
              (dimen[i-1] && !dimen[i] && extraparens > 0)))
@@ -1827,6 +1907,8 @@ int flags;
         output("\n");
     if (anyarrays > 1 && (flags & ODECL_FUNCTION))
 	output("\003");
+    if ((flags & ODECL_SPACE) && spaceafter)
+	output((flags & ODECL_SPMRG) ? " \005" : " ");
     output(name);
     for (i = 0; i < depth; i++) {
         if (i > 0 &&
@@ -1952,6 +2034,26 @@ Meaning *mp;
 }
 
 
+int tinyexpr(ex)
+Expr *ex;
+{
+    if (ex->kind == EK_CONST || ex->kind == EK_LONGCONST) {
+	if (ex->val.type->kind == TK_INTEGER ||
+	    (ex->val.type->kind == TK_REAL && strlen(ex->val.s) < 8) ||
+	    ex->val.type->kind == TK_CHAR ||
+	    (ex->val.type->kind == TK_POINTER && ex->val.i == 0) ||
+	    (ex->val.type->kind == TK_SMALLSET && ex->val.i == 0) ||
+	    ex->val.type->kind == TK_BOOLEAN ||
+	    (ex->val.type->kind == TK_STRING && ex->val.i <= 3))
+	    return 1;
+    } else if (ex->kind == EK_VAR) {
+	if (strlen(((Meaning *)ex->val.i)->name) < 8)
+	    return 1;
+    }
+    return 0;
+}
+
+
 Static int mixable(mp1, mp2, args, flags)
 Meaning *mp1, *mp2;
 int args, flags;
@@ -1978,7 +2080,8 @@ int args, flags;
         if (mixinits == 0)
             return 0;
         if (mixinits != 1 &&
-            (!mp1->constdefn || !mp2->constdefn))
+            ((!mp1->constdefn && tinyexpr(mp2->constdefn)) ||
+	     !mp2->constdefn))
             return 0;
     }
     if (args) {
@@ -2038,7 +2141,7 @@ Strlist *fnames;
 		    output(fnames->s);
 		}
 		output(",");
-		out_type(mp->type->basetype->basetype, 1);
+		out_type(mp->type->basetype->basetype, 0);
 		output(");\n");
 	    }
 	}
@@ -2070,7 +2173,9 @@ void outfieldlist(mp)
 Meaning *mp;
 {
     Meaning *mp0;
-    int num, only_union, empty, saveindent, saveindent2;
+    int num, flags, only_union, empty, saveindent, saveindent2;
+    int isprivate = 0;
+    Type *virtdestr = NULL;
     Strlist *fnames, *fn;
 
     if (!mp) {
@@ -2079,19 +2184,30 @@ Meaning *mp;
     }
     only_union = (mp && mp->kind == MK_VARIANT);
     fnames = NULL;
-    while (mp && mp->kind == MK_FIELD) {
+    while (mp && mp->kind != MK_VARIANT) {
+	if (mp->isreturn && !isprivate) {
+	    output("private:\n");
+	    isprivate = 1;
+	}
 	flushcomments(&mp->comments, CMT_PRE, -1);
 	output(storageclassname(varstorageclass(mp) & 0x10));
+	if (mp->kind == MK_FUNCTION && mp->bufferedfile)
+	    output("virtual ");
 	if (mp->dtype)
 	    output(mp->dtype->name);
 	else
 	    outbasetype(mp->type, 0);
-        output(" \005");
+	flags = 0;
+	if (mp->dtype)
+	    output(" \005");
+	else
+	    flags = ODECL_SPACE|ODECL_SPMRG;
 	for (;;) {
 	    if (mp->dtype)
 		output(mp->name);
 	    else
-		outdeclarator(mp->type, mp->name, 0);
+		outdeclarator(mp->type, mp->name, flags);
+	    flags = 0;
 	    if (mp->val.i && (mp->type != tp_abyte || mp->val.i != 8))
 		output(format_d(" : %d", mp->val.i));
 	    if (isfiletype(mp->type, 0)) {
@@ -2099,7 +2215,10 @@ Meaning *mp;
 		fn->value = (long)mp;
 	    }
 	    mp->wasdeclared = 1;
-	    if (!mp->cnext || mp->cnext->kind != MK_FIELD ||
+	    if (mp->kind == MK_FUNCTION && mp->val.s && mp->val.s[0] == 'D' &&
+		mp->bufferedfile)
+		virtdestr = mp->rectype;
+	    if (!mp->cnext || mp->cnext->kind == MK_VARIANT ||
 		mp->dtype != mp->cnext->dtype ||
 		varstorageclass(mp) != varstorageclass(mp->cnext) ||
 		!mixable(mp, mp->cnext, 0, 0))
@@ -2155,10 +2274,16 @@ Meaning *mp;
 	    output("int empty_union;   /* Pascal variant record was empty */\n");
         if (!only_union) {
             outindent = saveindent;
-            output("} ");
-            output(format_s(name_UNION, ""));
+            output("}");
+	    if (!anonymousunions) {
+		output(" ");
+		output(format_s(name_UNION, ""));
+	    }
             output(";\n");
         }
+    }
+    if (virtdestr) {
+	output(format_s("virtual ~%s() { }\n", virtdestr->meaning->name));
     }
 }
 
@@ -2175,7 +2300,7 @@ Type *type;
 	output(declbufncname);
 	output("(f,");
     }
-    out_type(type->basetype, 1);
+    out_type(type->basetype, 0);
     output(");\n");
     output(charname);
     output(format_s(" name[%s];\n", *name_FNSIZE ? name_FNSIZE : "80"));
@@ -2289,7 +2414,10 @@ int flags;
                 switch (type->kind) {
 
                     case TK_ENUM:
-                        output("enum {\n");
+                        output("enum ");
+			if (cplus > 0 && type->meaning)
+			    output(format_s("%s ", type->meaning->name));
+                        output("{\n");
 			saveindent = outindent;
 			moreindent(tabsize);
 			moreindent(structindent);
@@ -2309,25 +2437,45 @@ int flags;
 
                     case TK_RECORD:
                     case TK_BIGFILE:
-                        if (record_is_union(type))
+			if (type->issigned && type->kind == TK_RECORD)
+			    output("class ");
+			else if (record_is_union(type))
                             output("union ");
                         else
                             output("struct ");
                         if (type->meaning)
                             output(format_s(name_STRUCT, type->meaning->name));
-			if (!type->structdefd) {
-			    if (type->meaning) {
-				type->structdefd = 1;
+			else if (type->smin)
+			    output(type->smin->val.s);
+			if (!type->structdefd ||
+			     (!type->meaning && !type->smin)) {
+			    if (type->meaning || type->smin) {
+				if (type->issigned && type->basetype) {
+				    output(" : public ");
+				    output(type->basetype->meaning->name);
+				}
 				output(" ");
+			    } else if (type->structdefd) {
+				note(format_s("Consider using TagStructs or {%s} for this [328]",
+					      tagcomment));
 			    }
+			    type->structdefd = 1;
                             output("{\n");
+			    if (type->issigned && type->kind == TK_RECORD &&
+				type->fbase && !type->fbase->isreturn)
+				output("public:\n");
 			    saveindent = outindent;
 			    moreindent(tabsize);
 			    moreindent(structindent);
-			    if (type->kind == TK_BIGFILE)
+			    if (type->kind == TK_BIGFILE) {
 				declarebigfile(type);
-			    else
+			    } else {
 				outfieldlist(type->fbase);
+				if (type->issigned && !turboobjects)
+				    output(format_s("virtual ~%s() { }\n",
+						    format_s(name_STRUCT,
+							     type->meaning->name)));
+			    }
                             outindent = saveindent;
                             output("}");
                         }
@@ -2344,14 +2492,66 @@ int flags;
 
 
 
-void out_type(type, witharrays)
+void out_type(type, flags)
 Type *type;
-int witharrays;
+int flags;
 {
-    if (!witharrays && type->kind == TK_ARRAY)
+    if ((flags & ODECL_ARRAYPTRS) && type->kind == TK_ARRAY)
         type = makepointertype(type->basetype);
-    outbasetype(type, 0);
-    outdeclarator(type, "", 0);    /* write an "abstract declarator" */
+    outbasetype(type, flags);
+    outdeclarator(type, "", flags);    /* write an "abstract declarator" */
+}
+
+
+
+int onewordstring(cp)
+char *cp;
+{
+    while (isalnum(*cp) || *cp == '_')
+	cp++;
+    return !*cp;
+}
+
+
+int onewordtype(type, flags)
+Type *type;
+int flags;
+{
+    Type *tp;
+
+    if (flags & ODECL_REF)
+	return 0;
+    if ((flags & ODECL_ARRAYPTRS) && type->kind == TK_ARRAY)
+	return 0;
+    tp = findbasetype(type, flags | ODECL_DECL);
+    if (tp->preserved && tp->meaning->wasdeclared)
+	return 1;
+    if (tp != type) {
+	if (type->kind == TK_POINTER || type->kind == TK_ARRAY ||
+	    type->kind == TK_STRING || type->kind == TK_STRING ||
+	    type->kind == TK_CPROCPTR || type->kind == TK_FUNCTION)
+	    return 0;
+    }
+    if (((tp == tp_ubyte || tp == tp_uchar) && !onewordstring(ucharname)) ||
+	((tp == tp_sbyte || tp == tp_schar) && !onewordstring(scharname)) ||
+	(tp->kind == TK_CHAR && !onewordstring(charname)) ||
+	(tp->kind == TK_BOOLEAN &&
+	 !onewordstring((*name_BOOLEAN) ? name_BOOLEAN : ucharname)) ||
+	tp == tp_unsigned || tp == tp_ushort || tp == tp_special_anyptr ||
+	tp->kind == TK_PROCPTR || tp->kind == TK_FILE ||
+	tp->kind == TK_SPECIAL)
+	return 0;
+    if (tp->kind == TK_INTEGER) {
+	if (tp == tp_uint || tp == tp_int)
+	    return 1;
+	if (tp == tp_sint)
+	    return (useAnyptrMacros != 1 && !hassignedchar);
+	return onewordstring(integername);
+    }
+    if (type->meaning && type->meaning->kind == MK_TYPE &&
+	type->meaning->wasdeclared)
+	return 1;
+    return 0;
 }
 
 
@@ -2365,6 +2565,11 @@ Meaning *mp;
     if (mp->kind == MK_PARAM || mp->kind == MK_VARPARAM ||
 	mp->kind == MK_FIELD)
 	sclass = 0;
+    else if (useextern >= 0)
+	if (useextern > 0)
+	    sclass = 2;   /* extern */
+	else
+	    sclass = 0;   /* (plain) */
     else if (blockkind == TOK_EXPORT)
         if (usevextern)
 	    if (mp->constdefn &&
@@ -2377,7 +2582,7 @@ Meaning *mp;
             sclass = 0;                         /* (plain) */
     else if (mp->isfunction && mp->kind != MK_FUNCTION)
 	sclass = 2;   /* extern */
-    else if (mp->ctx->kind == MK_MODULE &&
+    else if ((!mp->ctx || mp->ctx->kind == MK_MODULE) &&
 	     (var_static != 0 ||
 	      (findsymbol(mp->name)->flags & NEEDSTATIC)) &&
 	     !mp->exported && !mp->istemporary && blockkind != TOK_END)
@@ -2436,31 +2641,40 @@ Static int var_mixable;
 
 void declarevar(mp, which)
 Meaning *mp;
-int which;    /* 0x1=header, 0x2=body, 0x4=trailer, 0x8=in varstruct */
+int which;    /* VDECL_... */
 {
-    int isstatic, isstructconst, saveindent, i;
+    int isstatic, isstructconst, saveindent, i, flags = 0;
     Strlist *sl;
+    Type *tp = mp->type;
 
     isstructconst = checkstructconst(mp);
     isstatic = varstorageclass(mp);
-    if (which & 0x8)
+    if (which & VDECL_VARSTRUCT)
 	isstatic &= 0x10;   /* clear all but Volatile flags */
     flushcomments(&mp->comments, CMT_PRE, -1);
-    if (which & 0x1) {
+    if ((which & VDECL_VARSTRUCT) && mp->isref)
+	tp = makepointertype(tp);
+    if (which & VDECL_HEADER) {
         if (isstructconst)
             outsection(minorspace);
         output(storageclassname(isstatic));
-	if (mp->dtype)
+	if (mp->dtype && tp == mp->type) {
 	    output(mp->dtype->name);
-        else
-	    outbasetype(mp->type, 0);
-        output(" \005");
+	    output(" \005");
+        } else {
+	    outbasetype(tp, 0);
+	    if (which & VDECL_BODY)
+		flags = ODECL_SPACE|ODECL_SPMRG;
+	    else
+		output(" \005");
+	}
     }
-    if (which & 0x2) {
-	if (mp->dtype)
+    if (which & VDECL_BODY) {
+	if (mp->dtype && tp == mp->type)
 	    output(mp->name);
 	else
-	    outdeclarator(mp->type, mp->name, 0);
+	    outdeclarator(tp, mp->name, flags);
+	flags = 0;
         if (mp->constdefn && blockkind != TOK_EXPORT &&
 	    (mp->kind == MK_VAR || mp->kind == MK_VARREF)) {
             if (mp->varstructflag) {    /* move init code into function body */
@@ -2505,7 +2719,7 @@ int which;    /* 0x1=header, 0x2=body, 0x4=trailer, 0x8=in varstruct */
             }
         }
     }
-    if (which & 0x4) {
+    if (which & VDECL_TRAILER) {
         output(";");
 	outtrailcomment(mp->comments, -1, declcommentindent);
 	flushcomments(&mp->comments, -1, -1);
@@ -2609,8 +2823,8 @@ int invarstruct;
 			    output(",\001 ");
 			else
 			    output(",\001");
-                    declarevar(mp, (first ? 0x3 : 0x2) |
-			           (invarstruct ? 0x8 : 0));
+                    declarevar(mp, (VDECL_BODY | (first ? VDECL_HEADER : 0) |
+				    (invarstruct ? VDECL_VARSTRUCT : 0)));
 		    mp2 = mp;
                     mp->wasdeclared = 1;
                     if (isfiletype(mp->type, 0)) {
@@ -2632,7 +2846,7 @@ int invarstruct;
                 break;
             mp = mp->cnext;
         }
-        declarevar(mp2, 0x4);
+        declarevar(mp2, VDECL_TRAILER);
     }
     declarefiles(fnames);
     return flag;
@@ -2663,7 +2877,7 @@ Type *ftype;
     Meaning *mp, *mp0;
     Type *tp;
     int done;
-    int flag = 1;
+    int flag = 1, oflags = 0;
     char *name;
 
     done = 0;
@@ -2676,13 +2890,18 @@ Type *ftype;
                 output("\n");
             flag = 0;
             mp0 = mp;
-            outbasetype(mp->othername ? mp->rectype : mp->type,
-			ODECL_CHARSTAR|ODECL_FREEARRAY);
-            output(" \005");
+	    if (mp->dtype)
+		output(mp->dtype->name);
+	    else
+		outbasetype(mp->othername ? mp->rectype : mp->type,
+			    ODECL_CHARSTAR|ODECL_FREEARRAY);
+	    oflags = ODECL_SPACE|ODECL_SPMRG;
             while (mp) {
                 if (!mp->wasdeclared) {
                     if (mp == mp0 ||
-			mixable(mp0, mp, 1, ODECL_CHARSTAR|ODECL_FREEARRAY)) {
+			(mp->dtype == mp0->dtype &&
+			 mixable(mp0, mp, 1,
+				 ODECL_CHARSTAR|ODECL_FREEARRAY))) {
                         if (mp != mp0)
 			    if (spacecommas)
 				output(",\001 ");
@@ -2691,7 +2910,8 @@ Type *ftype;
                         name = (mp->othername) ? mp->othername : mp->name;
                         tp = (mp->othername) ? mp->rectype : mp->type;
                         outdeclarator(tp, name,
-				      ODECL_CHARSTAR|ODECL_FREEARRAY);
+				      ODECL_CHARSTAR|ODECL_FREEARRAY|oflags);
+			oflags = 0;
                         mp->wasdeclared = 1;
                     } else
                         if (mixvars != 1)
@@ -2744,7 +2964,10 @@ Meaning *func;
     int saveindent;
 
     outsection(minfuncspace);
-    output(format_s("\n/* Local variables for %s: */\n", func->name));
+    if (slashslash)
+	output(format_s("\n// Local variables for %s:\n", func->name));
+    else
+	output(format_s("\n/* Local variables for %s: */\n", func->name));
     output("struct ");
     output(format_s(name_LOC, func->name));
     output(" {\n");
@@ -2823,7 +3046,13 @@ Type *setof;
         tp = maketype(TK_SMALLSET);
     else
         tp = maketype(TK_SET);
-    tp->basetype = tp_integer;
+    if (which_lang == LANG_TIP && smax <= 16)
+	if (smax <= 8)
+	    tp->basetype = tp_uchar;
+	else
+	    tp->basetype = tp_ushort;
+    else
+	tp->basetype = tp_integer;
     tp->indextype = setof;
     return tp;
 }
@@ -2997,7 +3226,7 @@ int ispacked, *aligned;
         if (*aligned && *val &&
             (ord_type(*type)->kind == TK_CHAR ||
              ord_type(*type)->kind == TK_INTEGER) &&
-            ord_range(findbasetype(*type, 0), &smin, &smax)) {
+            ord_range(findbasetype(*type, ODECL_NOPRES), &smin, &smax)) {
 	    if (ord_range(*type, &smin2, &smax2)) {
 		if (typebits(smin, smax) == 16 &&
 		    typebits(smin2, smax2) == 8 && *val == 8) {
@@ -3105,6 +3334,28 @@ Meaning *mp;
 
 
 
+void makestructtag(type, tname)
+Type *type;
+char *tname;
+{
+    Symbol *sym;
+    char *name;
+    int altnum;
+
+    if (!type->meaning && !type->smin) {
+	altnum = -1;
+	do {
+	    altnum++;
+	    name = format_s(name_FAKESTRUCT, tname);
+	    sym = findsymbol(findaltname(name, altnum));
+	} while (!issafename(sym, 1, 0, 0));
+	sym->flags |= AVOIDNAME;
+	type->smin = makeexpr_name(sym->name, tp_integer);
+    }
+}
+
+
+
 
 Static void p_fieldlist(tp, flast, ispacked, tname)
 Type *tp;
@@ -3112,20 +3363,93 @@ Meaning **flast;
 int ispacked;
 Meaning *tname;
 {
-    Meaning *firstm, *lastm, *veryfirstm, *dtype;
+    Meaning *firstm, *lastm, *veryfirstm, *dtype, *mp;
     Symbol *sym;
     Type *type, *tp2;
     long li1, li2;
     int aligned, constflag, volatileflag;
     short saveskipind;
     Strlist *l1;
+    int isprivate = 0, turboprivate = 0;
 
     saveskipind = skipindices;
     skipindices = 0;
     aligned = 1;
     lastm = NULL;
     veryfirstm = NULL;
-    while (curtok == TOK_IDENT) {
+    for (;;) {
+	if (curtok == TOK_PRIVATE) {
+	    gettok();
+	    /* Not safe:  Turbo uses a wider definition of "private"! */
+	    /* isprivate = 1; */
+	    turboprivate = 1;
+	}
+	if (curtok == TOK_PROCEDURE || curtok == TOK_FUNCTION ||
+	    curtok == TOK_CONSTRUCTOR || curtok == TOK_DESTRUCTOR) {
+	    int isfunc = (curtok == TOK_FUNCTION);
+	    char *special = ((curtok == TOK_CONSTRUCTOR) ? "C" :
+			     (curtok == TOK_DESTRUCTOR) ? "D" : NULL);
+	    Meaning *func, *func2;
+	    gettok();
+	    if (curtok == TOK_IDENT && curtokmeaning == tname) {
+		gettok();
+		wneedtok(TOK_DOT);
+	    }
+	    if (!wexpecttok(TOK_IDENT))
+		skiptotoken(TOK_IDENT);
+	    func = addfield(curtoksym, &flast, tp, tname);
+	    func->kind = MK_FUNCTION;
+	    curtoksym = findsymbol(format_ss("%s::%s", tname->name,
+					     func->name));
+	    func2 = addmeaning(curtoksym, MK_FUNCTION);
+	    func2->name = stralloc(curtoksym->name);
+	    gettok();
+	    func->val.i = func2->val.i = 0;
+	    func->val.s = func2->val.s = special;
+	    pushctx(func2);
+	    func->type = func2->type = p_funcdecl(&isfunc, 0);
+	    popctx();
+	    func->isfunction = isfunc;
+	    func->namedfile = 0;
+	    func->isforward = 1;
+	    func->isreturn = isprivate;
+	    func->fakeparam = turboprivate;
+	    func->type->meaning = func;
+	    func2->isfunction = isfunc;
+	    func2->namedfile = 0;
+	    func2->isforward = 1;
+	    func2->rectype = tp;
+	    func->xnext = func2;
+	    func->ctx = func2->ctx;
+	    func->cbase = func2->cbase;
+	    if (turboprivate) {
+		tp2 = tp->basetype;
+		while (tp2) {
+		    mp = func->sym->fbase;
+		    while (mp && mp->rectype != tp2)
+			mp = mp->snext;
+		    if (mp && !mp->fakeparam) {
+			note(format_s("Private member %s overrides parent's public member [336]", mp->name));
+			break;
+		    }
+		    tp2 = tp2->basetype;
+		}
+	    }
+	    needtok(TOK_SEMI);
+	    if (curtok == TOK_VIRTUAL) {
+		func->bufferedfile = 1;
+		gettok();
+		needtok(TOK_SEMI);
+	    } else if (curtok == TOK_OVERRIDE) {
+		gettok();
+		needtok(TOK_SEMI);
+	    }
+	    if (!turboobjects)
+		func->bufferedfile = 1;   /* always virtual */
+	    continue;
+	}
+	if (curtok != TOK_IDENT)
+	    break;
         firstm = addfield(curtoksym, &flast, tp, tname);
 	if (!veryfirstm)
 	    veryfirstm = firstm;
@@ -3152,6 +3476,8 @@ Meaning *tname;
 	    }
 	    dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
 	    type = p_type(firstm);
+	    if (tagstructs > 0)
+		makestructtag(type, firstm->name);
 	    decl_comments(lastm);
 	    fielddecl(firstm, &type, &tp2, &li1, ispacked, &aligned);
 	    dtype = validatedtype(dtype, type);
@@ -3162,6 +3488,8 @@ Meaning *tname;
 		firstm->val.i = li1;
 		firstm->constqual = constflag;
 		firstm->volatilequal = volatileflag;
+		firstm->isreturn = isprivate;
+		firstm->fakeparam = turboprivate;
 		tp->meaning = tname;
 		setupfilevar(firstm);
 		tp->meaning = NULL;
@@ -3243,6 +3571,8 @@ Meaning *tname;
                 firstm = firstm->cnext;
             }
 	    if (modula2) {
+		if (curtok == TOK_SEMI)
+		    gettok();
 		while (curtok == TOK_VBAR)
 		    gettok();
 	    } else {
@@ -3297,7 +3627,9 @@ Meaning ***confp;
 	    }
 	}
     } else {
-	if (modula2) {
+	if (modula2 ||
+	    (which_lang == LANG_TIP &&
+	     (curtok != TOK_IDENT || curtokmeaning))) {
 	    **confp = mp = addmeaning(findsymbol(format_s(name_ALOW, tname)), MK_PARAM);
 	    mp->fakeparam = 1;
 	    mp->constqual = 1;
@@ -3309,9 +3641,16 @@ Meaning ***confp;
 	    tp2->basetype = tp_integer;
 	    mp->type = tp_integer;
 	    mp->xnext->type = mp->type;
-	    tp2->smin = makeexpr_long(0);
-	    tp2->smax = makeexpr_minus(makeexpr_var(mp->xnext),
-				       makeexpr_var(mp));
+	    if (which_lang == LANG_TIP) {
+		tp2->smin = p_expr(tp_integer);
+		wneedtok(TOK_DOTS);
+		wneedtok(TOK_QM);
+		tp2->smax = makeexpr_var(mp->xnext);
+	    } else {
+		tp2->smin = makeexpr_long(0);
+		tp2->smax = makeexpr_minus(makeexpr_var(mp->xnext),
+					   makeexpr_var(mp));
+	    }
 	    tp->indextype = tp2;
 	    tp->structdefd = 1;
 	} else {
@@ -3385,7 +3724,7 @@ Meaning ***confp;
         bpower = 0;
         while ((1<<bpower) < size)
             bpower++;        /* round size up to power of two */
-        size = 1<<bpower;    /* size = # bits in an array element */
+        size = 1L<<bpower;   /* size = # bits in an array element */
         tp->escale = bpower;
         tp->issigned = issigned;
         hasrange = ord_range(tp->indextype, &smin, &smax) &&
@@ -3668,7 +4007,7 @@ Type *p_type(tname)
 Meaning *tname;
 {
     Type *tp;
-    int ispacked = 0;
+    int ispacked = 0, israndom = 0;
     Meaning **flast;
     Meaning *mp;
     Strlist *sl;
@@ -3676,6 +4015,7 @@ Meaning *tname;
     Expr *ex;
     Value val;
     static int proctypecount = 0;
+    int isclass;
 
     p_attributes();
     sizespec = size_attributes();
@@ -3686,15 +4026,51 @@ Meaning *tname;
         gettok();
     }
     checkkeyword(TOK_VARYING);
+    checkkeyword(TOK_RANDOM);
+    checkkeyword(TOK_OBJECT);
+    if (curtok == TOK_RANDOM) {
+	israndom = 1;
+	gettok();
+    }
     if (modula2)
 	checkkeyword(TOK_POINTER);
     switch (curtok) {
 
         case TOK_RECORD:
-            gettok();
+        case TOK_OBJECT:  /* Turbo 6.0 or Object Pascal objects */
+	    isclass = (curtok == TOK_OBJECT);
+	    if (isclass) {
+		if (turboobjects) {
+		    findsymbol("CONSTRUCTOR")->flags &= ~KWPOSS;
+		    findsymbol("DESTRUCTOR")->flags &= ~KWPOSS;
+		    findsymbol("VIRTUAL")->flags &= ~KWPOSS;
+		    findsymbol("PRIVATE")->flags &= ~KWPOSS;
+		} else {
+		    findsymbol("INHERITED")->flags &= ~KWPOSS;
+		    findsymbol("OVERRIDE")->flags &= ~KWPOSS;
+		}
+	    }
+	    taggedflag = 0;
+	    gettok();
 	    savenotephase = notephase;
 	    notephase = 1;
             tp = maketype(TK_RECORD);
+	    if (taggedflag)
+		makestructtag(tp, tname ? tname->name : "struct");
+	    tp->issigned = isclass;
+	    tp->basetype = NULL;
+	    if (curtok == TOK_LPAR) {
+		gettok();
+		expecttok(TOK_IDENT);
+		if (curtokmeaning && curtokmeaning->kind == MK_TYPE &&
+		    curtokmeaning->type->kind == TK_RECORD)
+		    tp->basetype = curtokmeaning->type;
+		else
+		    warning("Expected a base object type name [329]");
+		gettok();
+		if (!wneedtok(TOK_RPAR))
+		    skippasttoken(TOK_RPAR);
+	    }
             p_fieldlist(tp, &(tp->fbase), ispacked, tname);
 	    notephase = savenotephase;
             if (!wneedtok(TOK_END)) {
@@ -3762,6 +4138,7 @@ Meaning *tname;
 		tp = maketype(TK_BIGFILE);
 	    else
 		tp = maketype(TK_FILE);
+	    tp->issigned = israndom;
             if (curtok == TOK_OF) {
                 gettok();
                 tp->basetype = p_type(NULL);
@@ -3951,7 +4328,18 @@ Meaning *tname;
 			if (!wneedtok(TOK_RBR))
 			    skippasttotoken(TOK_RBR, TOK_SEMI);
 		    }
+		} else if (curtok == TOK_LPAR) {
+		    gettok();
+		    ex = p_ord_expr();
+		    if (curtok == TOK_COMMA) {
+			gettok();
+			(void)p_ord_expr();
+		    }
+		    skipcloseparen();
+		    tp = tp_longreal;
 		}
+		if (tp->kind == TK_RECORD && tp->issigned && !turboobjects)
+		    tp = makepointertype(tp);
 		if (tp == tp_text &&
 		    (structfilesflag ||
 		     (tname && strlist_cifind(structfiles, tname->name))))
@@ -4001,9 +4389,10 @@ Type *p_funcdecl(isfunc, istype)
 int *isfunc, istype;
 {
     Meaning *retmp = NULL, *mp, *firstmp, *lastmp, **prevm, **oldprevm;
+    Meaning *dtype;
     Type *type, *tp;
     enum meaningkind parkind;
-    int anyvarflag, constflag, volatileflag, num = 0;
+    int anyvarflag, constflag, volatileflag, refflag, num = 0;
     Symbol *sym;
     Expr *defval;
     Token savetok;
@@ -4063,8 +4452,9 @@ int *isfunc, istype;
 		}
                 gettok();
             }
-	    constflag = volatileflag = 0;
+	    constflag = volatileflag = refflag = 0;
 	    defval = NULL;
+	    dtype = NULL;
             if (curtok != TOK_COLON && !modula2) {
 		if (parkind != MK_VARPARAM)
 		    wexpecttok(TOK_COLON);
@@ -4118,12 +4508,25 @@ int *isfunc, istype;
 		    while (*prevm)
 			prevm = &(*prevm)->xnext;
                 } else {
+		    if (curtok == TOK_IDENT)
+			dtype = curtokmeaning;
                     tp = p_type(firstmp);
+		    dtype = validatedtype(dtype, tp);
                 }
                 if (!varfiles && isfiletype(tp, 0))
                     parkind = MK_PARAM;
-                if (parkind == MK_VARPARAM)
-                    tp = makepointertype(tp);
+                if (parkind == MK_VARPARAM) {
+		    if (userefs && !anyvarflag && tp != tp_anyptr &&
+			tp->kind != TK_STRING &&
+			tp->kind != TK_ARRAY &&
+			tp->kind != TK_SMALLARRAY &&
+			tp->kind != TK_SET &&
+			tp->kind != TK_SMALLSET) {
+			parkind = MK_PARAM;
+			refflag = 1;
+		    } else
+			tp = makepointertype(tp);
+		}
             }
 	    if (curtok == TOK_ASSIGN) {    /* check for parameter default */
 		gettok();
@@ -4143,11 +4546,13 @@ int *isfunc, istype;
 	    }
             while (firstmp) {
                 firstmp->type = tp;
+		firstmp->dtype = dtype;
                 firstmp->kind = parkind;    /* in case it changed */
                 firstmp->isactive = 1;
                 firstmp->anyvarflag = anyvarflag;
 		firstmp->constqual = constflag;
 		firstmp->volatilequal = volatileflag;
+		firstmp->isref = refflag;
 		if (defval) {
 		    if (firstmp == lastmp)
 			firstmp->constdefn = defval;
@@ -4182,7 +4587,11 @@ int *isfunc, istype;
     }
     if (*isfunc) {
         if (wneedtok(TOK_COLON)) {
+	    dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
 	    retmp->type = type->basetype = p_type(NULL);
+	    dtype = validatedtype(dtype, type->basetype);
+	    if (dtype)
+		type->smin = makeexpr_name(dtype->name, tp_integer);
 	    switch (retmp->type->kind) {
 		
 	      case TK_RECORD:
@@ -4220,7 +4629,8 @@ int *isfunc, istype;
 Symbol *findlabelsym()
 {
     if (curtok == TOK_IDENT && 
-        curtokmeaning && curtokmeaning->kind == MK_LABEL) {
+        curtokmeaning && curtokmeaning->kind == MK_LABEL &&
+	!curtokmeaning->isreturn) {
 #if 0
 	if (curtokmeaning->ctx != curctx && curtokmeaning->val.i != 0)
 	    curtokmeaning->val.i = --nonloclabelcount;
@@ -4281,7 +4691,7 @@ int *nvars;
     Meaning *mp, *mp0;
 
     mp = variants[*nvars-1];
-    while (mp && mp->kind == MK_FIELD) {
+    while (mp && mp->kind != MK_VARIANT) {
         if (mp->sym == sym) {
             return mp;
         }
@@ -4428,7 +4838,16 @@ ignorefield:
 		mp = variants[++j];
 	    if (!cex->args[i]) {
 		warning(format_s("No constructor for %s [134]", mp->name));
-		cex->args[i] = makeexpr_name("<oops>", mp->type);
+		if (mp->type->kind == TK_INTEGER ||
+		    mp->type->kind == TK_SUBR ||
+		    mp->type->kind == TK_CHAR ||
+		    mp->type->kind == TK_ENUM ||
+		    mp->type->kind == TK_BOOLEAN ||
+		    mp->type->kind == TK_REAL ||
+		    mp->type->kind == TK_POINTER)
+		    cex->args[i] = makeexpr_val(make_ord(mp->type, 0));
+		else
+		    cex->args[i] = makeexpr_name("<oops>", mp->type);
 	    }
 	    mp = mp->cnext;
 	}
@@ -4595,8 +5014,9 @@ int style;
 	
       case TK_SMALLSET:
       case TK_SET:
+	note("Generated code for set initializer must be rearranged [342]");
 	if (curtok == TOK_LBR)
-	    return p_setfactor(type, 1);
+	    return p_setfactor(type->indextype, 1);
 	break;
 	
       default:
@@ -4738,9 +5158,9 @@ void p_constdecl()
                         else if (useconsts > 0)
                             output("const ");
                         outbasetype(mp->type, ODECL_CHARSTAR|ODECL_FREEARRAY);
-                        output(" ");
                         outdeclarator(mp->type, mp->name,
-				      ODECL_CHARSTAR|ODECL_FREEARRAY);
+				      ODECL_CHARSTAR|ODECL_FREEARRAY |
+				      ODECL_SPACE);
                         output(" = {");
 			outtrailcomment(mp->comments, -1, declcommentindent);
 			saveindent = outindent;
@@ -4762,8 +5182,8 @@ void p_constdecl()
                             else if (useconsts > 0)
                                 output("const ");
                             outbasetype(mp->type, ODECL_CHARSTAR);
-                            output(" ");
-                            outdeclarator(mp->type, mp->name, ODECL_CHARSTAR);
+                            outdeclarator(mp->type, mp->name,
+					  ODECL_CHARSTAR|ODECL_SPACE);
                             output(";\n");
                         }
                         break;
@@ -4841,7 +5261,7 @@ Meaning *mp;
 void declaretype(mp)
 Meaning *mp;
 {
-    int saveindent, pres;
+    int saveindent;
 
     switch (mp->type->kind) {
 	
@@ -4854,20 +5274,41 @@ Meaning *mp;
 	} else {
 	    declaresubtypes(mp->type->fbase);
 	    outsection(minorspace);
-	    if (record_is_union(mp->type))
-		output("typedef union ");
+	    if (cplus <= 0)
+		output("typedef ");
+	    if (mp->type->issigned)
+		output("class ");
+	    else if (record_is_union(mp->type))
+		output("union ");
 	    else
-		output("typedef struct ");
-	    output(format_s("%s {\n", format_s(name_STRUCT, mp->name)));
+		output("struct ");
+	    if (cplus > 0)
+		output(mp->name);
+	    else
+		output(format_s(name_STRUCT, mp->name));
+	    if (mp->type->issigned && mp->type->basetype) {
+		output(" : public ");
+		output(mp->type->basetype->meaning->name);
+	    }
+	    output(" {\n");
+	    if (mp->type->issigned && mp->type->fbase &&
+		!mp->type->fbase->isreturn)
+		output("public:\n");
 	    saveindent = outindent;
 	    moreindent(tabsize);
 	    moreindent(structindent);
-	    if (mp->type->kind == TK_BIGFILE)
+	    if (mp->type->kind == TK_BIGFILE) {
 		declarebigfile(mp->type);
-	    else
+	    } else {
 		outfieldlist(mp->type->fbase);
+		if (mp->type->issigned && !turboobjects)
+		    output(format_s("virtual ~%s() { }\n", mp->name));
+	    }
 	    outindent = saveindent;
-	    output(format_s("} %s;", mp->name));
+	    if (cplus > 0)
+		output("};");
+	    else
+		output(format_s("} %s;", mp->name));
 	}
 	outtrailcomment(mp->comments, -1, declcommentindent);
 	mp->type->structdefd = 1;
@@ -4884,8 +5325,7 @@ Meaning *mp;
 			     mp->name));
 	} else {
 	    outbasetype(mp->type, 0);
-	    output(" ");
-	    outdeclarator(mp->type, mp->name, 0);
+	    outdeclarator(mp->type, mp->name, ODECL_SPACE);
 	}
 	output(";");
 	outtrailcomment(mp->comments, -1, declcommentindent);
@@ -4893,13 +5333,16 @@ Meaning *mp;
 	
       case TK_ENUM:
 	if (useenum) {
-	    output("typedef ");
+	    if (cplus <= 0)
+		output("typedef ");
 	    if (mp->type->meaning != mp)
 		output(mp->type->meaning->name);
 	    else
 		outbasetype(mp->type, 0);
-	    output(" ");
-	    output(mp->name);
+	    if (cplus <= 0) {
+		output(" ");
+		output(mp->name);
+	    }
 	    output(";");
 	    outtrailcomment(mp->comments, -1,
 			    declcommentindent);
@@ -4907,20 +5350,16 @@ Meaning *mp;
 	break;
 	
       default:
-	pres = preservetypes;
-	if (mp->type->kind == TK_POINTER && preservepointers >= 0)
-	    pres = preservepointers;
-	if (mp->type->kind == TK_STRING && preservestrings >= 0)
-	    if (preservestrings == 2)
-		pres = mp->type->indextype->smax->kind != EK_CONST;
-	    else
-		pres = preservestrings;
-	if (pres) {
+	if (preservetype(mp->type)) {
 	    output("typedef ");
-	    mp->type->preserved = 0;
-	    outbasetype(mp->type, 0);
-	    output(" ");
-	    outdeclarator(mp->type, mp->name, 0);
+	    if (mp->type->meaning != mp &&
+		mp->dtype && mp->dtype != mp) {
+		output(mp->dtype->name);
+	    } else {
+		mp->type->preserved = 0;
+		outbasetype(mp->type, 0);
+	    }
+	    outdeclarator(mp->type, mp->name, ODECL_SPACE);
 	    output(";\n");
 	    mp->type->preserved = 1;
 	    outtrailcomment(mp->comments, -1, declcommentindent);
@@ -4932,19 +5371,36 @@ Meaning *mp;
 
 
 
+int preservetype(type)
+Type *type;
+{
+    if (type->kind == TK_STRING && preservestrings >= 0)
+	if (preservestrings == 2)
+	    return type->indextype->smax->kind != EK_CONST;
+	else
+	    return preservestrings;
+    if (type->kind == TK_POINTER && preservepointers >= 0)
+	return preservepointers;
+    return preservetypes;
+}
+
+
 void declaretypes(outflag)
 int outflag;
 {
     Meaning *mp;
 
     for (mp = curctx->cbase; mp; mp = mp->cnext) {
-        if (mp->kind == MK_TYPE && !mp->wasdeclared) {
-            if (outflag) {
-		flushcomments(&mp->comments, CMT_PRE, -1);
-		declaretype(mp);
-		flushcomments(&mp->comments, -1, -1);
-            }
-            mp->wasdeclared = 1;
+        if (mp->kind == MK_TYPE) {
+	    if (!mp->wasdeclared) {
+		if (outflag) {
+		    flushcomments(&mp->comments, CMT_PRE, -1);
+		    declaretype(mp);
+		    flushcomments(&mp->comments, -1, -1);
+		}
+		mp->wasdeclared = 1;
+	    } else if (!outflag && preservetype(mp->type))
+		mp->type->preserved = 1;
         }
     }
 }
@@ -4953,7 +5409,7 @@ int outflag;
 
 void p_typedecl()
 {
-    Meaning *mp;
+    Meaning *mp, *dtype;
     int outflag = (blockkind != TOK_IMPORT);
     struct ptrdesc *pd;
 
@@ -4977,6 +5433,7 @@ void p_typedecl()
 		skippasttoken(TOK_SEMI);
 		continue;
 	    }
+	    dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
 	    mp->type = p_type(mp);
 	    decl_comments(mp);
 	    if (!mp->type->meaning)
@@ -4984,6 +5441,9 @@ void p_typedecl()
 	    if (mp->type->kind == TK_RECORD ||
 		mp->type->kind == TK_BIGFILE)
 		mp->type->structdefd = 1;
+	    mp->type->preserved = preservetype(mp->type);
+	    mp->dtype = validatedtype(dtype, mp->type);
+	    mp->type->preserved = 0;
 	    if (!anydeferredptrs)
 		declaretypes(outflag);
 	}
@@ -5146,7 +5606,8 @@ Type *type;
 }
 
 
-void p_vardecl()
+void p_vardecl(iscommon)
+int iscommon;
 {
     Meaning *firstmp, *lastmp, *dtype;
     Type *tp;
@@ -5219,7 +5680,13 @@ void p_vardecl()
 		strlist_delete(&attrlist, l1);
 	}
 	dtype = (curtok == TOK_IDENT) ? curtokmeaning : NULL;
+	if (curtok == TOK_IDENT && !curtokmeaning &&
+	    strcicmp(curtokbuf, "EXTERNAL")) {
+	    externflag = 1;
+	}
         tp = p_type(firstmp);
+	if (tagstructs > 0)
+	    makestructtag(tp, firstmp->name);
 	decl_comments(lastmp);
         handleabsolute(lastmp, (lastmp->kind != MK_VAR));
 	initexpr = NULL;
@@ -5253,8 +5720,12 @@ void p_vardecl()
 	    firstmp->isforward |= staticflag;
 	    firstmp->isfunction |= externflag;
 	    firstmp->exported |= globalflag;
-	    if (globalflag && (curctx->kind != MK_MODULE || mainlocals))
-		declarevar(firstmp, -1);
+	    if ((globalflag && (curctx->kind != MK_MODULE || mainlocals)) ||
+		(iscommon && firstmp->kind != MK_VARMAC)) {
+		declarevar(firstmp, (VDECL_ALL |
+				     (iscommon ? 0 : VDECL_VARSTRUCT)));
+		firstmp->wasdeclared = 1;
+	    }
             if (firstmp == lastmp)
                 break;
             firstmp = firstmp->cnext;
@@ -5265,6 +5736,22 @@ void p_vardecl()
     notephase = 0;
 }
 
+
+
+void p_commondecl()
+{
+    Meaning *ctx;
+
+    ctx = curctx;
+    while (curctx && curctx->kind == MK_FUNCTION)
+	curctx = curctx->ctx;
+    if (!curctx || curctx->kind != MK_MODULE)
+	curctx = ctx;
+    useextern = commonextern;
+    p_vardecl(1);
+    curctx = ctx;
+    useextern = -1;
+}
 
 
 

@@ -1,12 +1,13 @@
 
-This directory contains "p2c" version 1.20, a Pascal to C translator.
+This directory contains "p2c" version 1.21alpha-07.Dec.93, a Pascal to C translator.
 
-"p2c"  Copyright 1989, 1990, 1991  Free Software Foundation, Inc.
+"p2c"  Copyright 1989, 1990, 1991, 1992, 1993  Free Software Foundation, Inc.
 
 Written and maintained by:   Dave Gillespie
-			     256-80 Caltech
-			     Pasadena CA 91125
-			     daveg@csvax.cs.caltech.edu, cit-vax!daveg
+			     c/o Synaptics, Inc.
+			     2698 Orchard Parkway
+			     San Jose CA 95134
+			     daveg@synaptics.com, uunet!synaptx!daveg
 
 
 This program is distributed under the terms of the GNU License Agreement.
@@ -40,14 +41,16 @@ For a complete system, you must:
       suitable -I flag.
 
    c) Install the executable "p2c" in /usr/bin or elsewhere on the
-      standard search path.
+      standard search path.  You may also wish to install "p2cc",
+      a Perl script for running p2c as a Pascal compiler.
 
    d) Install the run-time library "libp2c.a" in /usr/lib or elsewhere
       on the standard library search path.
 
-   e) Install the Unix manual entry "p2c.1" in /usr/man/man1.  If you
-      have a "man1.Z" directory instead (for compressed man pages)
-      you will have to edit the Makefile to use a "compress" command.
+   e) Install the Unix manual entries "p2c.1" and "p2cc.1" in
+      /usr/man/man1.  If you have a "man1.Z" directory instead
+      (for compressed man pages) you will have to edit the Makefile
+      to use a "compress" command.
 
    f) Install the necessary files in the p2c home directory.
 
@@ -110,21 +113,21 @@ to the loc.p2crc file to replace the normal default (HP Pascal).
 PORTABILITY
 
 P2c was originally developed on a homebrew C compiler on the HP Pascal
-Workstation operating system.  Current development takes place on HP-UX,
-which is System V based.  The translator has also been compiled and used
-on Sun-3's, so presumably it is fairly portable among 32-bit Unix machines.
+Workstation operating system.  Current development takes place on Sparcs
+using Sun OS.  The translator has been compiled and used on a wide
+variety of Unix-like machines.
 
-Many parts of the code will have to be adjusted in order for p2c to work
-on a machine with 16-bit ints.  I have never had reason or opportunity to
-track these down since I don't have access to such a machine.  Please note
-that code _generated_ by p2c works with either size of int even though p2c
-itself does not.
+P2c was developed on systems with 32-bit ints, so porting to machines
+with 16-bit integers may be a bit rough.  If you are on a PC, it is
+preferable to use a 32-bit compiler such as "djgpp", a port of the
+GNU C compiler.  P2c might work on a 16-bit compiler that understood
+ANSI function prototypes.
 
-If your compiler supports ANSI prototypes, most of the 16-bit portability
-problems will go away except for possible %d/%ld sloppiness in sprintf control
-strings.  There may be places where p2c tries to cast a pointer into an
-int, but I believe all such cases use longs consistently.  You will have
-a problem if your long type is not large enough to store a pointer.
+Please note that code _generated_ by p2c works with either size of
+int even though p2c itself may not.
+
+The Macintosh is not officially supported for p2c, but Guenther
+Sawitzki <gs@statlab.uni-heidelberg.de> does some Mac support.
 
 Because p2c was developed to run under Unix, it is sloppy about memory
 allocation.  Some data structures are allocated but never freed.  Profiles

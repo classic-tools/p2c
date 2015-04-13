@@ -1,7 +1,7 @@
 # Makefile for "p2c", the Pascal to C translator.
-#  Copyright (C) 1989, 1990, 1991 Free Software Foundation.
+#  Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
 #  Author: Dave Gillespie.
-#  Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+#  Author's address: daveg@synaptics.com.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 # along with this program; see the file COPYING.  If not, write to
 # the Free Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
+SHELL = /bin/sh
 
 # Directories (private version)
 HOMEDIR = ../home
@@ -122,6 +123,16 @@ p2c.cat: p2c.man.inst
 	    then nroff -man p2c.man.inst >p2c.cat; fi
 
 
+# The p2cc script.
+p2cc: p2cc.perl
+	sed -e "s;--HOMEDIR--;$(ABSHOMEDIR);"   \
+	    -e "s;--INCDIR--;$(ABSINCDIR);"     \
+	    -e "s;--LIBDIR--;$(ABSLIBDIR);"     \
+	    -e "s;/bin/perl;`which perl`;"      \
+	    p2cc.perl >p2cc
+	chmod a+x p2cc
+
+
 
 # Initially installing p2c:
 #  First, make sure $(HOMEDIR) and $(INCDIR) exist and are writable;
@@ -137,6 +148,7 @@ newhome:
 install: proto \
 	makedirs \
 	$(BINDIR)/p2c         \
+	$(BINDIR)/p2cc        \
 	$(LIBDIR)/libp2c.a    \
 	$(MANDIR)/p2c.1	      \
 	$(INCDIR)/p2c.h	      \
@@ -149,14 +161,17 @@ install: proto \
 
 SHELL=/bin/sh
 makedirs:
-	if [ ! -d $(HOMEDIR) ]; then mkdir $(HOMEDIR); fi
-	if [ ! -d $(BINDIR) ]; then mkdir $(BINDIR); fi
-	if [ ! -d $(LIBDIR) ]; then mkdir $(LIBDIR); fi
-	if [ ! -d $(MANDIR) ]; then mkdir $(MANDIR); fi
-	if [ ! -d $(INCDIR) ]; then mkdir $(INCDIR); fi
+	if [ ! -d $(HOMEDIR) ]; then mkdir $(HOMEDIR); else true; fi
+	if [ ! -d $(BINDIR) ]; then mkdir $(BINDIR); else true; fi
+	if [ ! -d $(LIBDIR) ]; then mkdir $(LIBDIR); else true; fi
+	if [ ! -d $(MANDIR) ]; then mkdir $(MANDIR); else true; fi
+	if [ ! -d $(INCDIR) ]; then mkdir $(INCDIR); else true; fi
 
 $(BINDIR)/p2c: p2c
 	$(COPY)  p2c          $(BINDIR)/p2c
+
+$(BINDIR)/p2cc: p2cc
+	$(COPY)  p2cc         $(BINDIR)/p2cc
 
 $(LIBDIR)/libp2c.a: libp2c.a
 	$(COPY)  libp2c.a     $(LIBDIR)/libp2c.a
@@ -193,10 +208,10 @@ tags:
 	etags $(SRCS) $(LIBSRCS) $(MISCSRCS) $(HDRS)
 
 clean.o:
-	rm $(OBJS)
+	rm -f $(OBJS)
 
 clean:
-	rm $(OBJS) $(LIBOBJS) $(PROTOS) p2c
+	rm -f $(OBJS) $(LIBOBJS) $(PROTOS) p2c libp2c.a
 
 wc:
 	wc $(SRCS) $(LIBSRCS) trans.h

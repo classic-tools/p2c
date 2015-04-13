@@ -1,5 +1,5 @@
-/* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/e.p" */
+/* Output from p2c --VERSION--, the Pascal-to-C translator */
+/* From input file "examples/e.p" */
 
 
 #include <p2c/p2c.h>
@@ -36,14 +36,14 @@ long xs, n;
 digit *y;
 long *ys;
 {
-  long i, c;
+  long i;
+  long c = 0;
 
-  c = 0;
   for (i = xs; i <= NDIGITS; i++) {
     c = c * 10 + x[i];
     y[i] = c / n;
     c %= n;
-/* p2c: dist/examples/e.p, line 37:
+/* p2c: examples/e.p, line 37:
  * Note: Using % for possibly-negative arguments [317] */
   }
   *ys = xs;
@@ -56,9 +56,9 @@ Static Void add(s, x, xs)
 digit *s, *x;
 long xs;
 {
-  long i, c;
+  long i;
+  long c = 0;
 
-  c = 0;
   for (i = NDIGITS; i >= xs; i--) {
     c += s[i] + x[i];
     if (c >= 10) {
@@ -88,9 +88,9 @@ Static Void sub(s, x, xs)
 digit *s, *x;
 long xs;
 {
-  long i, c;
+  long i;
+  long c = 0;
 
-  c = 0;
   for (i = NDIGITS; i >= xs; i--) {
     c += s[i] - x[i];
     if (c < 0) {
@@ -140,13 +140,13 @@ Char *argv[];
     printf("%d", s[i]);
     if (i % 1000 == 0)
       putchar('\n');
-/* p2c: dist/examples/e.p, line 121:
+/* p2c: examples/e.p, line 121:
  * Note: Using % for possibly-negative arguments [317] */
     if (i % 100 == 0)
       putchar('\n');
     else if (i % 10 == 0)
       putchar(' ');
-/* p2c: dist/examples/e.p, line 122:
+/* p2c: examples/e.p, line 122:
  * Note: Using % for possibly-negative arguments [317] */
   }
   printf("\nFinal digits: ");
@@ -155,7 +155,7 @@ Char *argv[];
   putchar('\n');
   exit(EXIT_SUCCESS);
 
-/* p2c: dist/examples/e.p, line 123:
+/* p2c: examples/e.p, line 123:
  * Note: Using % for possibly-negative arguments [317] */
 }
 

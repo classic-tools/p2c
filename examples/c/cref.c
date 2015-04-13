@@ -1,5 +1,5 @@
-/* Output from p2c, the Pascal-to-C translator */
-/* From input file "dist/examples/cref.p" */
+/* Output from p2c --VERSION--, the Pascal-to-C translator */
+/* From input file "examples/cref.p" */
 
 
 #include <p2c/p2c.h>
@@ -58,11 +58,10 @@ Static Void lookup(name, np)
 Char *name;
 node **np;
 {
-  node **npp;
+  node **npp = &base;
 
   if (strlen(name) > maxnamelen)
     name[maxnamelen] = '\0';
-  npp = &base;
   while (*npp != NULL && strcmp((*npp)->name, name)) {
     if (strcmp(name, (*npp)->name) < 0)
       npp = &(*npp)->left;
@@ -237,12 +236,9 @@ Char *argv[];
 	  f = freopen(fn, "r", f);
 	else
 	  f = fopen(fn, "r");
-	if (f == NULL) {
-	  P_escapecode = -10;
-	  P_ioresult = FileNotFound;
-	  goto _Ltry1;
-	}
-      RECOVER2(try1,_Ltry1);
+	if (f == NULL)
+	  _EscIO2(FileNotFound, fn);
+      RECOVER(try1);
 	if (P_escapecode != -10)
 	  _Escape(P_escapecode);
 	good = false;
@@ -261,17 +257,16 @@ Char *argv[];
 	TEMP = strchr(buf, '\n');
 	if (TEMP != NULL)
 	  *TEMP = 0;
-/* p2c: dist/examples/cref.p, line 228:
+/* p2c: examples/cref.p, line 228:
  * Note: Null character at end of sprintf control string [148] */
 	strcpy(STR1, buf);
 	strcpy(buf, STR1);
 	i = 1;
-	while (buf[i - 1] == ' ')
+	while (buf[i-1] == ' ')
 	  i++;
 	do {
-	  while (!(buf[i - 1] == '\0' || buf[i - 1] == '_' ||
-		   isalnum(buf[i - 1]))) {
-	    switch (buf[i - 1]) {
+	  while (!(buf[i-1] == '\0' || buf[i-1] == '_' || isalnum(buf[i-1]))) {
+	    switch (buf[i-1]) {
 
 	    case ':':
 	    case '=':
@@ -288,14 +283,14 @@ Char *argv[];
 	      if (brace == 0) {
 		i++;
 		j = i;
-		while ((buf[i - 1] != '\'' || buf[i] == '\'') &&
-		       buf[i - 1] != '\0') {
-		  if (buf[i - 1] == '\'')
+		while ((buf[i-1] != '\'' || buf[i] == '\'') &&
+		       buf[i-1] != '\0') {
+		  if (buf[i-1] == '\'')
 		    i += 2;
 		  else
 		    i++;
 		}
-		if (buf[i - 1] == '\0')
+		if (buf[i-1] == '\0')
 		  i--;
 		sprintf(name, "'%.*s'", (int)(i - j), buf + j - 1);
 		lookup(name, &np);
@@ -337,20 +332,20 @@ Char *argv[];
 	    }
 	    i++;
 	  }
-	  if (buf[i - 1] != '\0') {
+	  if (buf[i-1] != '\0') {
 	    j = i;
-	    if (isdigit(buf[i - 1]) && i > 1 && buf[i - 2] == '-')
+	    if (isdigit(buf[i-1]) && i > 1 && buf[i-2] == '-')
 	      j--;
-	    while (buf[i - 1] == '_' || isalnum(buf[i - 1]))
+	    while (buf[i-1] == '_' || isalnum(buf[i-1]))
 	      i++;
 	    if (brace == 0) {
 	      sprintf(name, "%.*s", (int)(i - j), buf + j - 1);
 	      FORLIM = strlen(name);
 	      for (j = 1; j <= FORLIM; j++) {
-		if (isupper(buf[j - 1]))
-		  buf[j - 1] += 32;
+		if (isupper(buf[j-1]))
+		  buf[j-1] += 32;
 	      }
-	      while (buf[i - 1] == ' ')
+	      while (buf[i-1] == ' ')
 		i++;
 	      lookup(name, &np);
 	      switch (np->kind) {
@@ -387,7 +382,7 @@ Char *argv[];
 		break;
 
 	      default:
-		if (curkind == k_normal && buf[i - 1] == '(')
+		if (curkind == k_normal && buf[i-1] == '(')
 		  cref(np, k_extproc);
 		else
 		  cref(np, curkind);
@@ -395,7 +390,7 @@ Char *argv[];
 	      }
 	    }
 	  }
-	} while (buf[i - 1] != '\0');
+	} while (buf[i-1] != '\0');
       }
       if (paren != 0)
 	printf("Warning: ending paren count = %ld\n", paren);
@@ -417,13 +412,11 @@ Char *argv[];
   else
     f = fopen(fn, "w");
   if (f == NULL)
-    _EscIO(FileNotFound);
+    _EscIO2(FileNotFound, fn);
   traverse(base);
   if (f != NULL)
     fclose(f);
   f = NULL;
-  if (f != NULL)
-    fclose(f);
   exit(EXIT_SUCCESS);
 }
 

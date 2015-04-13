@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -207,7 +207,7 @@ Type *type;
 
             case TK_REAL:
                 if (ord_type(val.type)->kind == TK_INTEGER) {
-                    sprintf(buf, "%d.0", val.i);
+                    sprintf(buf, "%ld.0", val.i);
                     val.s = stralloc(buf);
                     val.type = tp_real;
                     return val;
@@ -646,8 +646,6 @@ Expr *arg1, *arg2;
         name = "MissingProc";
     }
     ex = makeexpr(EK_BICALL, 2);
-    if (!strcmp(name, "~SETIO"))
-        name = (iocheck_flag) ? "~~SETIO" : name_SETIO;
     ex->val.s = stralloc(name);
     ex->val.type = type;
     ex->args[0] = arg1;
@@ -691,8 +689,6 @@ Expr *arg1, *arg2, *arg3, *arg4;
         name = "MissingProc";
     }
     ex = makeexpr(EK_BICALL, 4);
-    if (!strcmp(name, "~CHKIO"))
-        name = (iocheck_flag) ? "~~CHKIO" : name_CHKIO;
     ex->val.s = stralloc(name);
     ex->val.type = type;
     ex->args[0] = arg1;
@@ -725,6 +721,37 @@ Expr *arg1, *arg2, *arg3, *arg4, *arg5;
     ex->args[4] = arg5;
     if (debug>2) { fprintf(outf,"makeexpr_bicall returns "); dumpexpr(ex); fprintf(outf,"\n"); }
     return ex;
+}
+
+
+
+Expr *makeexpr_SETIO(flag, code, name)
+Expr *flag;
+char *code;
+Expr *name;
+{
+    Expr *ecode;
+
+    if (code) {
+	ecode = makeexpr_name(code, tp_int);
+    } else {
+	ecode = name->args[0];
+	name = name->args[1];
+    }
+    if (iocheck_flag) {
+	if (name) {
+	    if (name->val.type->kind == TK_STRING ||
+		name->val.type->kind == TK_ARRAY)
+		name = copyexpr(name);
+	    else
+		name = filenamepart(name);
+	}
+	if (name)
+	    return makeexpr_bicall_3("~~SETIO", tp_void, flag, ecode, name);
+	else
+	    return makeexpr_bicall_2("~~SETIO", tp_void, flag, ecode);
+    } else
+	return makeexpr_bicall_2(name_SETIO, tp_void, flag, ecode);
 }
 
 
@@ -1096,7 +1123,7 @@ int i;
     if (*s++ != i + '0') return 0;
     if (*s == '.')
 	while (*++s == '0') ;
-    return (!isdigit(*s));
+    return (!isdigit(*s) && toupper(*s) != 'E');
 }
 
 
@@ -1217,7 +1244,7 @@ Expr *ex;
 
         case EK_ADDR:
             if (ex->args[0]->kind == EK_VAR) {
-                mp = (Meaning *)ex->val.i;
+                mp = (Meaning *)ex->args[0]->val.i;
                 return (!mp->ctx || mp->ctx->kind == MK_MODULE);
             }
             return 0;
@@ -2093,6 +2120,8 @@ enum exprkind kind;
 }
 
 
+int chararith = 0;
+
 Expr *makeexpr_plus(a, b)
 Expr *a, *b;
 {
@@ -2130,6 +2159,7 @@ Expr *a, *b;
 		     ord_type(a->args[i]->val.type)->kind == TK_INTEGER ||
 		     ord_type(a->args[j]->val.type)->kind == TK_INTEGER) &&
 		    (!(ischartype(a->args[i]) || ischartype(a->args[j])) ||
+		     chararith ||
 		     a->args[i]->val.i == - a->args[j]->val.i ||
 		     a->args[i]->val.i == 0 || a->args[j]->val.i == 0) &&
                     (a->args[i]->val.type->kind != TK_REAL &&
@@ -3017,28 +3047,35 @@ Expr *a, *b;
         sign = -1;
     else
         sign = 0;
-    if (ord_type(b->val.type)->kind == TK_INTEGER ||
-	ord_type(b->val.type)->kind == TK_CHAR) {
+    if ((ord_type(b->val.type)->kind == TK_INTEGER ||
+	 ord_type(b->val.type)->kind == TK_CHAR) &&
+	b->val.type->kind != TK_STRING) {
         for (;;) {
             if (a->kind == EK_PLUS && ISCONST(a->args[a->nargs-1]->kind) &&
                  a->args[a->nargs-1]->val.i &&
                  (ISCONST(b->kind) ||
                   (b->kind == EK_PLUS && ISCONST(b->args[b->nargs-1]->kind)))) {
+		chararith++;
                 b = makeexpr_minus(b, copyexpr(a->args[a->nargs-1]));
                 a = makeexpr_minus(a, copyexpr(a->args[a->nargs-1]));
+		chararith--;
                 continue;
             }
             if (b->kind == EK_PLUS && ISCONST(b->args[b->nargs-1]->kind) &&
                  b->args[b->nargs-1]->val.i &&
                  ISCONST(a->kind)) {
+		chararith++;
                 a = makeexpr_minus(a, copyexpr(b->args[b->nargs-1]));
                 b = makeexpr_minus(b, copyexpr(b->args[b->nargs-1]));
+		chararith--;
                 continue;
             }
             if (b->kind == EK_PLUS && sign &&
 	         ISCONST(b->args[b->nargs-1]->kind) &&
-                 checkconst(b->args[b->nargs-1], sign)) {
-                b = makeexpr_plus(b, makeexpr_long(-sign));
+                 checkconst(b->args[b->nargs-1], sign) &&
+		 (a->val.type->kind == TK_INTEGER ||
+		  a->val.type->kind == TK_CHAR)) {
+		b = makeexpr_plus(b, makeexpr_long(-sign));
                 switch (rel) {
                     case EK_LT:
                         rel = EK_LE;
@@ -3453,23 +3490,25 @@ int check;
 
     if (debug>2) { fprintf(outf,"makeexpr_hat("); dumpexpr(a); fprintf(outf,")\n"); }
     if (isfiletype(a->val.type, -1)) {
-	requirefilebuffer(a);
 	if (*chargetfbufname &&
-	    filebasetype(a->val.type)->kind == TK_CHAR)
+	    filebasetype(a->val.type)->kind == TK_CHAR) {
 	    return makeexpr_bicall_1(chargetfbufname,
 				     filebasetype(a->val.type),
 				     filebasename(a));
-	else if (*arraygetfbufname &&
-		 filebasetype(a->val.type)->kind == TK_ARRAY)
-	    return makeexpr_bicall_2(arraygetfbufname,
-				     filebasetype(a->val.type),
-				     filebasename(a),
-				     makeexpr_type(filebasetype(a->val.type)));
-	else
-	    return makeexpr_bicall_2(getfbufname,
-				     filebasetype(a->val.type),
-				     filebasename(a),
-				     makeexpr_type(filebasetype(a->val.type)));
+	} else {
+	    requirefilebuffer(a);
+	    if (*arraygetfbufname &&
+		filebasetype(a->val.type)->kind == TK_ARRAY)
+		return makeexpr_bicall_2(arraygetfbufname,
+					 filebasetype(a->val.type),
+					 filebasename(a),
+					 makeexpr_type(filebasetype(a->val.type)));
+	    else
+		return makeexpr_bicall_2(getfbufname,
+					 filebasetype(a->val.type),
+					 filebasename(a),
+					 makeexpr_type(filebasetype(a->val.type)));
+	}
     }
     if (a->kind == EK_PLUS &&
                (ex = a->args[0])->val.type->kind == TK_POINTER &&
@@ -3607,7 +3646,7 @@ Expr *a;
 	    else {
 		if (a->kind == EK_VAR &&
 		    (mp = (Meaning *)a->val.i)->kind == MK_PARAM &&
-		    mp->type != promote_type(mp->type) &&
+		    !mp->isref && mp->type != promote_type(mp->type) &&
 		    fixpromotedargs) {
 		    note(format_s("Taking & of possibly promoted param %s [324]",
 				  mp->name));
@@ -3824,6 +3863,8 @@ Expr *ex;
         case EK_FUNCTION:
         case EK_BICALL:
         case EK_SPCALL:
+	case EK_NEW:
+	case EK_DELETE:
             return 1000;
 
         case EK_ASSIGN:
@@ -3877,15 +3918,16 @@ int vars;   /* 1 if explicit dependencies on vars count as dependencies */
             mp = (Meaning *)ex->val.i;
 	    if (mp->kind == MK_CONST)
 		return 1;
+	    if (mp->isref)
+		return 0;
 	    if (vars == 2 &&
 		mp->ctx == curctx &&
 		mp->ctx->kind == MK_FUNCTION &&
 		!mp->varstructflag)
 		return 1;
-            return (mp->kind == MK_CONST ||
-		    (!vars &&
-		     (mp->kind == MK_VAR || mp->kind == MK_VARREF ||
-		      mp->kind == MK_PARAM || mp->kind == MK_VARPARAM)));
+            return (!vars &&
+		    (mp->kind == MK_VAR || mp->kind == MK_VARREF ||
+		     mp->kind == MK_PARAM || mp->kind == MK_VARPARAM));
 
         case EK_BICALL:
             return nosideeffects_func(ex);
@@ -3897,6 +3939,8 @@ int vars;   /* 1 if explicit dependencies on vars count as dependencies */
         case EK_POSTDEC:
         case EK_HAT:
         case EK_INDEX:
+	case EK_NEW:
+	case EK_DELETE:
             return 0;
 
         default:
@@ -3912,6 +3956,10 @@ Meaning *mp;
 {
     int i;
 
+    if (mp->isref && (ex->kind != EK_VAR ||
+		      ((Meaning *)ex->val.i)->ctx != curctx ||
+		      ((Meaning *)ex->val.i)->isref))
+	return 1;
     i = ex->nargs;
     while (--i >= 0)
 	if (exprdependsvar(ex->args[i], mp))
@@ -3919,7 +3967,9 @@ Meaning *mp;
     switch (ex->kind) {
 
         case EK_VAR:
-	    return ((Meaning *)ex->val.i == mp);
+	    return ((Meaning *)ex->val.i == mp ||
+		    (((Meaning *)ex->val.i)->isref &&
+		     mp->ctx != curctx));
 
 	case EK_BICALL:
 	    if (nodependencies(ex, 1))
@@ -4050,6 +4100,8 @@ int mode;
         case EK_ASSIGN:
         case EK_POSTINC:
         case EK_POSTDEC:
+	case EK_NEW:
+	case EK_DELETE:
             return 0;
 
         default:
@@ -4200,6 +4252,9 @@ Expr *ex;
         else
             return NULL;
     }
+    if (ex->kind == EK_NAME && !strcmp(ex->val.s, name_RETV) &&
+	curctx && curctx->kind == MK_FUNCTION && curctx->rectype)
+	return curctx->cbase;
     return NULL;
 }
 
@@ -4232,7 +4287,7 @@ int n;
     else if (n == 31)
         return 0x7fffffff;
     else
-        return (1<<n) - 1;
+        return (1L<<n) - 1;
 }
 
 
@@ -4477,8 +4532,8 @@ Expr *a, *b;
                 strchange(&ex3->val.s, clrbitsname);
             } else if (*putbitsname &&
                        ((ISCONST(b->kind) &&
-                         (b->val.i | ~((1 << (1 << tp->escale)) - 1)) == -1) ||
-                        checkconst(b, (1 << (1 << tp->escale)) - 1))) {
+                         (b->val.i | ~((1L << (1 << tp->escale))-1)) == -1) ||
+                        checkconst(b, (1L << (1 << tp->escale)) - 1))) {
                 strchange(&ex3->val.s, putbitsname);
                 insertarg(ep, 2, makeexpr_arglong(makeexpr_ord(b), 0));
             } else {
@@ -4512,6 +4567,7 @@ Expr *a, *b;
 		strchange(&ex3->val.s, charputfbufname);
 		insertarg(ep, 1, b);
 	    } else {
+		requirefilebuffer(a);
 		strchange(&ex3->val.s, putfbufname);
 		insertarg(ep, 1, makeexpr_type(ex3->val.type->basetype->basetype));
 		insertarg(ep, 2, b);
@@ -4754,10 +4810,10 @@ Expr *ex;
                                   ex2,
                                   makeexpr_addrstr(ex)));
     } else {
-        if (ord_type(ex->val.type)->kind == TK_CHAR)
-            cp = "%c";
-        else if (ex->val.type->kind == TK_STRING)
+        if (ex->val.type->kind == TK_STRING)
             cp = "%s";
+        else if (ord_type(ex->val.type)->kind == TK_CHAR)
+            cp = "%c";
         else {
             warning("Mixing non-strings with strings [170]");
             return ex;
@@ -4983,7 +5039,7 @@ Expr *ex;
 		i++;
 		continue;
 	    }
-            for (i++; i < len &&
+            for (i++; i < len && cp[i] != '%' &&
                       !(isalpha(cp[i]) && cp[i] != 'l'); i++) {
                 if (cp[i] == '*') {
                     if (isliteralconst(ex->args[j], NULL) == 2) {
@@ -5043,13 +5099,17 @@ Meaning *mp;
         ex = makeexpr_var(tvar);
     } else
         ex2 = NULL;
-    if (mp->constdefn) {
+    if (mp->kind == MK_FUNCTION) {
+        ex = makeexpr_un(EK_DOT, mp->type, ex);
+        ex->val.i = (long)mp;
+    } else if (mp->constdefn && mp->kind == MK_FIELD) {
         nex = makeexpr(EK_MACARG, 0);
         nex->val.type = tp_integer;
         ex3 = replaceexprexpr(copyexpr(mp->constdefn), nex, ex, 0);
         freeexpr(ex);
         freeexpr(nex);
         ex = gentle_cast(ex3, mp->val.type);
+	ex->val.type = mp->val.type;
     } else {
         ex = makeexpr_un(EK_DOT, mp->type, ex);
         ex->val.i = (long)mp;
@@ -5065,8 +5125,8 @@ Meaning *mp;
             } else
                 note(format_s("Unable to sign-extend field %s [149]", mp->name));
         }
+	ex->val.type = mp->val.type;
     }
-    ex->val.type = mp->val.type;
     return makeexpr_comma(ex2, ex);
 }
 
@@ -5223,7 +5283,10 @@ int pasc;
             if (pasc) {
                 if (type == tp_integer || type == tp_unsigned)
                     return 4;
-                else
+                else if ((type == tp_ubyte || type == tp_sbyte) &&
+			 (which_lang == LANG_TURBO))
+		    return 1;
+		else
                     return 2;
             } else {
                 if (type == tp_abyte || type == tp_ubyte || type == tp_sbyte)

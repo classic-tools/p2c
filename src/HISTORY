@@ -4,6 +4,170 @@ Summary of changes to "p2c"
 ------- -- ------- --  ---
 
 
+Version 1.21 (alpha version of Tue Dec  7 20:57:35 PST 1993):
+
+ * Added version number of p2c to banner at top of output file.
+
+ * Added perl script "p2cc" for using p2c + cc as a Pascal compiler.
+
+ * Added support for most object-oriented features of Borland/Turbo Pascal 6.0.
+
+ * Added support for most object-oriented features of MPW Object Pascal.
+
+ * Added more C++ support:  Comments, references, inits, reserved words.
+
+ * Added some data flow analysis to remove cruft, e.g., from local file vars.
+
+ * Added partial support for TI Pascal (Language=TIP).
+
+ * Added partial support for Apollo Domain Pascal (Language=Apollo).
+
+ * Added ReplaceBefore and ReplaceAfter features.
+
+ * Added treatment of form-feeds similar to blank lines.
+
+ * Added a declaration for the "alfa" type to p2c.h.
+
+ * Can now compile -DNO_DECLARE_MALLOC if you get "p2c.h redeclaring malloc".
+
+ * Improved handling of StoreFileNames mode.
+
+ * Improved handling of PreserveTypes mode.
+
+ * Added IncludeOutFileName option, for names generated when ExpandIncludes=0.
+
+ * Changed file-related runtime errors to report file name when possible.
+
+ * Changed to absorb or edit some comments like "end; {of foo}".
+
+ * Improved handling of comments around if-else statements.
+
+ * Changed to accept an optional colon after OTHERWISE keyword.
+
+ * Added recognition of {$F=xxx} (Motorola Pascal include directive).
+
+ * Added ability to use %f instead of %g in scanf to dodge library bugs.
+
+ * Added TagStructs and TagComment to deal with nested records & WITH stmts.
+
+ * Added MainType option.
+
+ * Added P_rmax, etc., to p2clib.c.
+
+ * Modified error messages to be parseable by Emacs' M-x compile mode.
+
+ * Modified src/Makefile slightly to avoid a bug in DEC 3100/Ultrix 4.2.
+
+ * Changed order of stddef.h/stdlib.h in trans.h and p2c.h for gcc on Suns.
+
+ * Added "libp2c.a" to "make clean" list.
+
+ * Bug fix in pexpr.c:istypespec: Added "iscast" test.
+   Symptom: C expr "(funnyname)(x)" was parsed as call, more useful as cast.
+
+ * Bug fix in decl.c:setupmeaning: Added mp->kind = ... = MK_VARREF.
+   Symptom: VarMacros were broken.
+
+ * Bug fix in funcs.c:seekeof: Changed to use skipnlspacename.
+   Symptom: Seekeof should skip newline characters as well; it didn't.
+
+ * Bug fix in funcs.c:makeenumnames: Added "tp = ord_type(tp)".
+   Symptom: Was confused by subrange-of-enum types.
+
+ * Bug fix in expr.c:realint: Forgot to recognize "e" portion in number.
+   Symptom: "x * 1e20" was simplified to "x" since "1e20" looked like "1". (!)
+
+ * Bug fix in expr.c:makeexpr_rel: Don't change r > i-1 to r >= i for real r.
+   Symptom: This transformation was done for this but not for i > r-1.
+
+ * Bug fix in expr.c:cleansprintf: Recognize '%%' control sequences.
+   Symptom: Crash on the statement "writeln('%*')".
+
+ * Bug fix in comment.c:grabcomment: Ignore ";" after comment.
+   Symptom: Comment in "begin ... end {foo};" was misplaced.
+
+ * Bug fix in comment.c:commentline: Suppress */ -> %/ in EMBED comments.
+   Symptom: This was inappropriate in this case.  (Partial fix only.)
+
+ * Bug fix in parse.c:out_block: Added singleindent(open/closebraceindent).
+   Symptom: Braces on "switch" statements were not indented properly.
+
+ * Bug fix in parse.c:p_stmt: Fixed bugs parsing Modula 2 CASE and WITH.
+   Symptom: These were broken in Modula 2 mode.
+
+ * Bug fix in parse.c:p_stmt: Moved newstmt() call in TOK_WITH section.
+   Symptom: Comments were not placed properly around "WITH = ..." line.
+
+ * Bug fix in parse.c:p_fieldlist: Handled extra ";"'s in Modula 2 variants.
+   Symptom: Semicolons before "|" caused problems.
+
+ * Bug fix in parse.c:forward_decl/out_function: Added check for use_static.
+   Symptom: "StaticFunctions 0" did not prevent use of "Static" keyword.
+
+ * Bug fix in funcs.c:func_chr: Changed p_expr to p_parexpr.
+   Symptom: Was parsing "CHR(A)=B" as "CHR(A=B)"!
+
+ * Bug fix in funcs.c:proc_readdir: Changed skipopenparen() to skipcomma().
+   Symptom: Calls to HP Pascal builtin READDIR didn't translate properly.
+
+ * Bug fix in funcs.c:func_filesize: Changed 1L to 0L.
+   Symptom: filesize(f) returned result that was off by one.
+
+ * Bug fix in expr.c:type_sizeof: Added support for Turbo byte types.
+   Symptom: Blockread on an "array of byte" adjusted size inappropriately.
+
+ * Bug fix in pexpr.c:p_index: Added var_reference calls for lower limit.
+   Symptom: Subprocedure reference to parent's conformant array limit failed.
+
+ * Bug fix in parse.c:out_block: Added (*NAME_main) test.
+   Symptom: Setting NameMain to null, as described in p2c.man, didn't work!
+
+ * Bug fix in expr.c:makeexpr_sprintfify: Don't treat string[1] as char.
+   Symptom: a:=b+c with var b,c:string[1] generated %c instead of %s.
+
+ * Bug fix in decl.c:outdeclarator: Obey preserved bit for pointer->basetype.
+   Symptom: Typedefs for strings used with "*" in function args, return types.
+
+ * Bug fix in p2c.h:my_memmove: Added #ifdef bcopy/memcpy clause.
+   Symptom: Infinite recursion if system headers #defined bcopy as memmove.
+
+ * Bug fix in p2c.h: Added #define HAS_STDLIB after second #include <stdlib.h>.
+   Symptom: Problems including p2c.h under HP-UX.
+
+ * Bug fix in sys.p2crc: Added comments for SeekBase, MessageStderr.
+   Symptom: These options existed, but were undocumented!
+
+ * Miscellaneous other bug fixes and enhancements.
+
+ * Added to sys.p2crc/trans.h the following configuration parameters:
+
+    AnalyzeFlow         Do use/def and data flow analysis, on by default.
+    AnonymousUnions     Use C++ anonymous unions for variant records.
+    CallCasts           Use C++ "int(x)" casts instead of C "(int)x".
+    CommonExtern        TIP "common" variables should be declared "extern".
+    DeclSpacing         Spacing between declarations and function body.
+    EscIO2Name          Name of EscIO-like function that takes a filename arg.
+    FloatScanfCode      Scanf code for reading floats, %g by default.
+    IncludeOutFileName  Format for include names when ExpandIncludes = 0.
+    LowPrecLogicals     AND/OR/NOT have lower precedence than arith ops.
+    MainType            Result type to use for "main" function.
+    MessageStderr       MESSAGE proc writes to stderr (already in trans.h).
+    NewDelete           Use C++ "new/delete" instead of "malloc/free".
+    OFSName             Name of translation for Turbo Pascal OFS.
+    ReplaceAfter        Do sed-like textual replacements on output text.
+    ReplaceBefore       Do sed-like textual replacements on input text.
+    SeekBase            Origin for file-seeking (already in trans.h).
+    SEGName             Name of translation for Turbo Pascal SEG.
+    ShellVars           Shell variable settings for MPW Pascal programs.
+    SkipNLSpaceName     Name of skipspaces function which also skips \n's.
+    SlashSlash          Use C++-style "//" notation for comments.
+    SpaceStars          Write "int* x" instead of "int *x".
+    TagComment          {TAGGED} enables TagStructs for a particular record.
+    TagStructs          Generate tag names for all unnamed structs.
+    TurboObjects        Select between Turbo and Mac-style Object Pascal.
+    UseInits            Convert assignments to initializers when possible.
+    UseRefs             Use C++ references "int &x" when appropriate.
+
 Version 1.20:
 
  * Changed VAX "type t = [byte] 0..255" not to say it can't interpret size.

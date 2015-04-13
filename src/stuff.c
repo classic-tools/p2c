@@ -1,6 +1,6 @@
 /* "p2c", a Pascal to C translator.
-   Copyright (C) 1989, 1990, 1991 Free Software Foundation.
-   Author's address: daveg@csvax.caltech.edu; 256-80 Caltech/Pasadena CA 91125.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation.
+   Author's address: daveg@synaptics.com.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -296,8 +296,10 @@ char *fn, *ext;
     cp = my_strrchr(fn, '.');
     cp2 = my_strrchr(fn, '/');
     if (cp && (!cp2 || cp > cp2)) {
+#if 0
         if (!cp[1])     /* remove trailing '.' */
             *cp = 0;
+#endif
     } else {
         strcat(fn, ".");
         strcat(fn, ext);
@@ -430,6 +432,7 @@ char *s1, *s2, *s3;
     int wid, prec;
     int flags;
     char fmtbuf[50], *fp;
+    Strlist *sl;
 
     debughook();
     while (*src) {
@@ -554,6 +557,21 @@ char *s1, *s2, *s3;
 		cp = format_s("%s", cp);
 		removesuffix(cp);
 	    }
+	    if (!strcincmp(cp, "$$SHELL(", 8)) {
+		cp += 8;
+		cp2 = dst;
+		while (*cp && *cp != ')')
+		    *cp2++ = *cp++;
+		if (*cp) cp++;
+		*cp2 = 0;
+		sl = strlist_cifind(shellvars, dst);
+		if (sl) {
+		    strcpy(dst, (char *)sl->value);
+		    dst += strlen(dst);
+		} else
+		    warning(format_s("No such shell variable $$SHELL(%s) [341]",
+				     dst));
+	    }
 	    if (flags & FF_REMSLASH) {
 		cp2 = cp + strlen(cp);
 		while (cp2 >= cp &&
@@ -587,7 +605,7 @@ char *fmt;
 
 char *format_d(fmt, a1)
 char *fmt;
-int a1;
+long a1;
 {
     return format_gen(fmt, a1, 0L, (double)a1, NULL, NULL, NULL);
 }
@@ -617,7 +635,7 @@ char *fmt, *a1, *a2;
 
 char *format_sd(fmt, a1, a2)
 char *fmt, *a1;
-int a2;
+long a2;
 {
     return format_gen(fmt, a2, 0L, (double)a2, a1, NULL, NULL);
 }
@@ -754,21 +772,57 @@ int c;
 }
 
 
+Static char *tok_ptr;
+
 char *my_strtok(cp, delim)
 char *cp, *delim;
 {
-    static char *ptr;
-
     if (cp)
-	ptr = cp;
-    while (*ptr && my_strchr(delim, *ptr))
-	ptr++;
-    if (!*ptr)
+	tok_ptr = cp;
+    while (*tok_ptr && my_strchr(delim, *tok_ptr))
+	tok_ptr++;
+    if (!*tok_ptr)
 	return NULL;
-    cp = ptr;
-    while (*ptr && !my_strchr(delim, *ptr))
-	ptr++;
-    *ptr++ = 0;
+    cp = tok_ptr;
+    while (*tok_ptr && !my_strchr(delim, *tok_ptr))
+	tok_ptr++;
+    if (*tok_ptr)
+	*tok_ptr++ = 0;
+    return cp;
+}
+
+
+char *my_strtokq(cp, delim)
+char *cp, *delim;
+{
+    if (cp)
+	tok_ptr = cp;
+    while (*tok_ptr && my_strchr(delim, *tok_ptr))
+	tok_ptr++;
+    if (!*tok_ptr)
+	return NULL;
+    cp = tok_ptr;
+    if (*cp == '"') {
+	char *cp2;
+	cp2 = cp = ++tok_ptr;
+	while (*tok_ptr && *tok_ptr != '"') {
+	    if (*tok_ptr == '\\') {
+		*cp2++ = *++tok_ptr;
+		if (*tok_ptr)
+		    tok_ptr++;
+	    } else
+		*cp2++ = *tok_ptr++;
+	}
+	if (*tok_ptr)
+	    *tok_ptr++ = 0;
+    } else {
+	if (*cp == '#')
+	    return NULL;
+	while (*tok_ptr && !my_strchr(delim, *tok_ptr))
+	    tok_ptr++;
+	if (*tok_ptr)
+	    *tok_ptr++ = 0;
+    }
     return cp;
 }
 

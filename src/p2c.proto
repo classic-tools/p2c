@@ -1,5 +1,5 @@
 
-/* Declarations created by "makeproto" on Wed Apr 24 13:30:00 1991 */
+/* Declarations created by "makeproto" on Tue Dec  7 20:57:09 1993 */
 
 
 
@@ -64,10 +64,26 @@ Static void     outnl              PP( (int serial) );
 Static void     out_block          PP( (Stmt *spbase, int opts, int serial) );
 Static int      checkreturns       PP( (Stmt **spp, int nearret) );
 Static int      isescape           PP( (Expr *ex) );
-Static int      deadendblock       PP( (Stmt *sp) );
+Static int      deadendblock       PP( (Stmt *sp, int breaks) );
+Static int      propcheckexprokay  PP( (Expr *ex) );
+Static int      findpropexpr       PP( (Expr *ex, int prop, int add) );
+Static void     findpropchecksexpr PP( (Expr *ex) );
+Static void     findpropchecks     PP( (Stmt *sp) );
+Static void     checkpropzero      PP( (Expr *ex, long *truep, long *falsep,
+                                        int nonzero) );
+Static void     checkpropsexpr     PP( (Expr *ex, Stmt *sp, long *truep,
+                                        long *falsep) );
+Static void     checkprops         PP( (Stmt *sp, long *truep, long *falsep) );
+Static int      checkelimexpr      PP( (Expr *ex, Expr *ex2) );
+Static int      checkelims         PP( (Stmt *sp, Expr *ex, int depth, int last) );
 Static int      checkcomma_expr    PP( (Stmt **spp, Expr **exp) );
 Static void     checkcommas        PP( (Stmt **spp) );
 Static int      checkvarchangeable PP( (Expr *ex, Meaning *mp) );
+Static void     findinitsexpr      PP( (Expr *ex) );
+Static int      findinitscheckexpr PP( (Expr *ex, Meaning *mp) );
+Static int      findinitscheckstmt PP( (Stmt *sp, Meaning *mp) );
+Static int      anygotos           PP( (Stmt *sp) );
+Static void     findinits          PP( (Stmt *sp, int depth, int okay) );
 Static Stmt    *p_body             PV();
 Static void     out_function       PP( (Meaning *func) );
 Static void     scanfwdparams      PP( (Meaning *mp) );
@@ -125,12 +141,10 @@ Static Value    eval_expr_either   PP( (Expr *ex, int pasc) );
 /* Declarations from pexpr.c */
 #ifdef PROTO_PEXPR_C
 Static void     bindnames          PP( (Expr *ex) );
-Static Expr    *p_variable         PP( (Type *target) );
 Static Expr    *makesmallsetconst  PP( (long bits, Type *type) );
 Static Expr    *p_factor           PP( (Type *target) );
 Static Expr    *p_powterm          PP( (Type *target) );
 Static Expr    *p_term             PP( (Type *target) );
-Static Expr    *p_sexpr            PP( (Type *target) );
 Static int      incompat           PP( (Expr *ex, int num, int prec) );
 Static void     outop3             PP( (int breakbefore, char *name) );
 Static void     out_ctx            PP( (Meaning *ctx, int address) );
@@ -187,7 +201,9 @@ Static Stmt    *proc_date          PV();
 Static Stmt    *proc_dec           PV();
 Static Expr    *func_dec           PV();
 Static Stmt    *proc_delete        PP( (Expr *ex) );
+Static Expr    *parse_constructor  PP( (Type *type, Expr *var) );
 Static char    *choose_free_func   PP( (Expr *ex) );
+Static int      usenewdelete       PP( (Type *tp) );
 Static Stmt    *proc_dispose       PV();
 Static Expr    *func_exp           PP( (Expr *ex) );
 Static Expr    *func_expo          PP( (Expr *ex) );
@@ -209,6 +225,7 @@ Static Stmt    *proc_freemem       PP( (Expr *ex) );
 Static Stmt    *proc_get           PV();
 Static Stmt    *proc_getmem        PP( (Expr *ex) );
 Static Stmt    *proc_gotoxy        PP( (Expr *ex) );
+Static Stmt    *proc_halt          PV();
 Static Expr    *handle_vax_hex     PP( (Expr *ex, char *fmt, int scale) );
 Static Expr    *func_hex           PV();
 Static Expr    *func_hi            PV();
@@ -220,6 +237,7 @@ Static Stmt    *proc_insert        PP( (Expr *ex) );
 Static Expr    *func_int           PV();
 Static Expr    *func_uint          PV();
 Static Stmt    *proc_leave         PV();
+Static Expr    *func_lint          PV();
 Static Expr    *func_lo            PV();
 Static Expr    *func_loophole      PV();
 Static Expr    *func_lower         PV();
@@ -237,9 +255,13 @@ Static Expr    *func_min           PV();
 Static Stmt    *proc_move          PP( (Expr *ex) );
 Static Stmt    *proc_move_fast     PV();
 Static Stmt    *proc_new           PV();
+Static Expr    *func_new_turbo     PV();
+Static Expr    *handle_new         PP( (Expr *ex) );
 Static Expr    *func_oct           PV();
 Static Expr    *func_octal         PP( (Expr *ex) );
 Static Expr    *func_odd           PP( (Expr *ex) );
+Static Expr    *func_ofs           PV();
+Static Expr    *func_seg           PV();
 Static Stmt    *proc_open          PV();
 Static Expr    *func_ord           PV();
 Static Expr    *func_ord4          PV();
@@ -281,6 +303,7 @@ Static Expr    *func_scanne        PP( (Expr *ex) );
 Static Stmt    *proc_seek          PV();
 Static Expr    *func_seekeof       PV();
 Static Expr    *func_seekeoln      PV();
+Static Expr    *func_self          PV();
 Static Stmt    *proc_setstrlen     PV();
 Static Stmt    *proc_settextbuf    PV();
 Static Expr    *func_sin           PP( (Expr *ex) );
@@ -305,8 +328,10 @@ Static Expr    *func_swap          PP( (Expr *ex) );
 Static Expr    *func_tan           PP( (Expr *ex) );
 Static Expr    *func_tanh          PP( (Expr *ex) );
 Static Expr    *func_trunc         PP( (Expr *ex) );
+Static Expr    *func_typeof        PV();
 Static Expr    *func_utrunc        PP( (Expr *ex) );
 Static Expr    *func_uand          PV();
+Static Expr    *func_ub            PV();
 Static Expr    *func_udec          PV();
 Static Expr    *func_unot          PV();
 Static Expr    *func_uor           PV();
